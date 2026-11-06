@@ -24,16 +24,17 @@ func render(_ px: Int) -> Data {
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     let s = CGFloat(px)
-    let side = s * 824 / 1024
-    let origin = (s - side) / 2
-    let outer = NSRect(x: origin, y: origin, width: side, height: side)
+    // Full-bleed: macOS 26 masks app icons to its own squircle and shrinks any icon that
+    // doesn't fill the canvas into a gray plate, so the artwork covers the whole canvas.
+    let side = s
+    let outer = NSRect(x: 0, y: 0, width: side, height: side)
     rgb(0x121212).setFill()
-    NSBezierPath(roundedRect: outer, xRadius: side * 0.22, yRadius: side * 0.22).fill()
-    let inset = side * 0.04
+    outer.fill()
+    let inset = side * 0.08
     let grid = outer.insetBy(dx: inset, dy: inset)
     let cell = grid.width / 4
     NSGraphicsContext.saveGraphicsState()
-    NSBezierPath(roundedRect: grid, xRadius: side * 0.18, yRadius: side * 0.18).addClip()
+    NSBezierPath(roundedRect: grid, xRadius: side * 0.16, yRadius: side * 0.16).addClip()
     for r in 0..<4 { for c in 0..<4 {
         let n = r * 4 + c + 1
         if n == 16 { continue }
