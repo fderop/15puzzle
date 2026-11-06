@@ -23,7 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.backgroundColor = Palette.background
         window.contentView = host
         window.contentMinSize = NSSize(width: 320, height: 420)
-        window.contentAspectRatio = NSSize(width: 480, height: 630)
         window.acceptsMouseMovedEvents = true
         window.center()
         window.setFrameAutosaveName("FifteenPuzzleMain")
