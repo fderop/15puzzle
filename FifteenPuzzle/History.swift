@@ -66,3 +66,28 @@ final class HistoryStore: ObservableObject {
         }
     }
 }
+
+/// Mean of a calendar day's solves; optimal is nil when no record that day has one.
+struct DayAverage: Equatable {
+    var day: Date          // start of day
+    var count: Int
+    var moves: Double
+    var seconds: Double
+    var tps: Double
+    var optimalMoves: Double?
+}
+
+extension HistoryStore {
+    static func dailyAverages(_ records: [SolveRecord], calendar: Calendar = .current) -> [DayAverage] {
+        func mean(_ xs: [Double]) -> Double? { xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count) }
+        return Dictionary(grouping: records) { calendar.startOfDay(for: $0.date) }
+            .map { day, rs in
+                DayAverage(day: day, count: rs.count,
+                           moves: mean(rs.map { Double($0.moves) })!,
+                           seconds: mean(rs.map(\.seconds))!,
+                           tps: mean(rs.map(\.tps))!,
+                           optimalMoves: mean(rs.compactMap { $0.optimalMoves.map(Double.init) }))
+            }
+            .sorted { $0.day < $1.day }
+    }
+}

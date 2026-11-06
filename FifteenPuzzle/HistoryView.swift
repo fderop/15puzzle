@@ -1,37 +1,93 @@
 import SwiftUI
 import Charts
 
+struct HistoryPoint {
+    var x: Double
+    var moves: Double
+    var seconds: Double
+    var tps: Double
+    var optimal: Double?
+    var tip: [String]
+}
+
+enum HistoryMode: String { case sequential, day }
+
 struct HistoryView: View {
     @ObservedObject var history: HistoryStore
     let best: PersonalBest?
     let s: CGFloat
     @State private var hover: HoverInfo?
+    @AppStorage("historyMode") private var modeRaw = HistoryMode.sequential.rawValue
+
+    private var mode: HistoryMode { HistoryMode(rawValue: modeRaw) ?? .sequential }
+
+    static func points(_ recs: [SolveRecord], mode: HistoryMode) -> [HistoryPoint] {
+        switch mode {
+        case .sequential:
+            return recs.sorted { $0.date < $1.date }.map { r in
+                var tip = [r.date.formatted(date: .abbreviated, time: .shortened),
+                           String(format: "Time: %.3f s", r.seconds), "Moves: \(r.moves)"]
+                if let o = r.optimalMoves {
+                    tip.append(String(format: "optimal: %d moves (%.2f\u{00D7})", o, Double(r.moves) / Double(max(o, 1))))
+                } else if r.scramble != nil {
+                    tip.append("optimal: \u{2026}")
+                }
+                tip.append(String(format: "TPS: %.3f", r.tps))
+                return HistoryPoint(x: r.date.timeIntervalSinceReferenceDate, moves: Double(r.moves), seconds: r.seconds, tps: r.tps,
+                                    optimal: r.optimalMoves.map(Double.init), tip: tip)
+            }
+        case .day:
+            return HistoryStore.dailyAverages(recs).map { d in
+                var tip = [d.day.formatted(date: .abbreviated, time: .omitted),
+                           "\(d.count) solve\(d.count == 1 ? "" : "s")",
+                           String(format: "avg %.1f moves", d.moves),
+                           String(format: "avg %.3f s", d.seconds),
+                           String(format: "avg %.2f TPS", d.tps)]
+                if let o = d.optimalMoves { tip.append(String(format: "avg optimal %.1f", o)) }
+                return HistoryPoint(x: d.day.timeIntervalSinceReferenceDate, moves: d.moves, seconds: d.seconds,
+                                    tps: d.tps, optimal: d.optimalMoves, tip: tip)
+            }
+        }
+    }
 
     var body: some View {
-        let recs = history.records
+        let pts = Self.points(history.records, mode: mode)
         VStack(spacing: 8 * s) {
-            bestLine
-            if recs.isEmpty {
+            HStack(spacing: 8 * s) {
+                bestLine
+                Spacer(minLength: 0)
+                Picker("", selection: $modeRaw) {
+                    Text("Day").tag(HistoryMode.day.rawValue)
+                    Text("Sequential").tag(HistoryMode.sequential.rawValue)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .focusable(false)
+                .font(.system(size: 12 * s))
+                .frame(width: 170 * s)
+            }
+            if pts.isEmpty {
                 Text("No solves yet")
                     .font(.system(size: 15 * s, weight: .regular))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                let lo = recs.map(\.date).min()!, hi = recs.map(\.date).max()!
-                let pad: TimeInterval = hi.timeIntervalSince(lo) < 1 ? 3600 : hi.timeIntervalSince(lo) * 0.03
-                let domain = lo.addingTimeInterval(-pad)...hi.addingTimeInterval(pad)
+                let lo = pts.map(\.x).min()!, hi = pts.map(\.x).max()!
+                let pad = hi - lo < 1 ? (mode == .day ? 43200 : 3600) : (hi - lo) * 0.03
+                let domain = (lo - pad)...(hi + pad)
                 VStack(spacing: 4 * s) {
-                    HistoryChart(recs: recs, title: "Moves", color: Color(white: 0.9), domain: domain, s: s, showX: false, hover: $hover) { Double($0.moves) }
-                    HistoryChart(recs: recs, title: "Time (s)", color: Color(nsColor: Palette.gold), domain: domain, s: s, showX: false, hover: $hover) { $0.seconds }
-                    HistoryChart(recs: recs, title: "TPS", color: Color(nsColor: Palette.rgb(0x75FFDC)), domain: domain, s: s, showX: true, hover: $hover) { $0.tps }
+                    HistoryChart(pts: pts, title: "Moves", color: Color(white: 0.9), domain: domain, s: s, showX: false, hover: $hover, value: \.moves)
+                    HistoryChart(pts: pts, title: "Time (s)", color: Color(nsColor: Palette.gold), domain: domain, s: s, showX: false, hover: $hover, value: \.seconds)
+                    HistoryChart(pts: pts, title: "TPS", color: Color(nsColor: Palette.rgb(0x75FFDC)), domain: domain, s: s, showX: true, hover: $hover, value: \.tps)
                 }
                 .coordinateSpace(name: "hist")
-                .overlay { tooltip(recs) }
+                .overlay { tooltip(pts) }
             }
         }
         .padding(.horizontal, 20 * s)
         .padding(.top, 16 * s)
         .padding(.bottom, 16 * s)
+        .onChange(of: modeRaw) { hover = nil }
     }
 
     private var bestLine: some View {
@@ -46,19 +102,10 @@ struct HistoryView: View {
 struct HoverInfo: Equatable { var index: Int; var point: CGPoint }
 
 extension HistoryView {
-    @ViewBuilder fileprivate func tooltip(_ recs: [SolveRecord]) -> some View {
-        if let h = hover, recs.indices.contains(h.index) {
-            let r = recs[h.index]
+    @ViewBuilder fileprivate func tooltip(_ pts: [HistoryPoint]) -> some View {
+        if let h = hover, pts.indices.contains(h.index) {
             VStack(alignment: .leading, spacing: 2 * s) {
-                Text(r.date.formatted(date: .abbreviated, time: .shortened))
-                Text(String(format: "Time: %.3f s", r.seconds))
-                Text("Moves: \(r.moves)")
-                if let o = r.optimalMoves {
-                    Text(String(format: "optimal: %d moves (%.2f\u{00D7})", o, Double(r.moves) / Double(max(o, 1))))
-                } else if r.scramble != nil {
-                    Text("optimal: \u{2026}")
-                }
-                Text(String(format: "TPS: %.3f", r.tps))
+                ForEach(Array(pts[h.index].tip.enumerated()), id: \.offset) { _, l in Text(l) }
             }
             .font(.system(size: 12 * s, weight: .regular).monospacedDigit())
             .foregroundColor(.white)
@@ -73,44 +120,44 @@ extension HistoryView {
 }
 
 private struct HistoryChart: View {
-    let recs: [SolveRecord]
+    let pts: [HistoryPoint]
     let title: String
     let color: Color
-    let domain: ClosedRange<Date>
+    let domain: ClosedRange<Double>
     let s: CGFloat
     let showX: Bool
     @Binding var hover: HoverInfo?
-    let value: (SolveRecord) -> Double
+    let value: KeyPath<HistoryPoint, Double>
 
     var body: some View {
         let grid = Color(nsColor: Palette.button).opacity(0.25)
         let axisFont = Font.system(size: 12 * s, weight: .regular)
         Chart {
-            if let h = hover, recs.indices.contains(h.index) {
-                RuleMark(x: .value("Date", recs[h.index].date))
+            if let h = hover, pts.indices.contains(h.index) {
+                RuleMark(x: .value("Date", pts[h.index].x))
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     .foregroundStyle(Color.white.opacity(0.4))
-                PointMark(x: .value("Date", recs[h.index].date), y: .value(title, value(recs[h.index])))
+                PointMark(x: .value("Date", pts[h.index].x), y: .value(title, pts[h.index][keyPath: value]))
                     .symbolSize(70)
                     .foregroundStyle(color)
             }
             if title == "Moves" {
-                ForEach(Array(recs.enumerated()), id: \.offset) { _, r in
-                    if let o = r.optimalMoves {
-                        LineMark(x: .value("Date", r.date), y: .value("Optimal", o), series: .value("Series", "optimal"))
+                ForEach(Array(pts.enumerated()), id: \.offset) { _, r in
+                    if let o = r.optimal {
+                        LineMark(x: .value("Date", r.x), y: .value("Optimal", o), series: .value("Series", "optimal"))
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                             .foregroundStyle(Color(nsColor: Palette.button))
-                        PointMark(x: .value("Date", r.date), y: .value("Optimal", o))
+                        PointMark(x: .value("Date", r.x), y: .value("Optimal", o))
                             .symbolSize(10)
                             .foregroundStyle(Color(nsColor: Palette.button))
                     }
                 }
             }
-            ForEach(Array(recs.enumerated()), id: \.offset) { _, r in
-                LineMark(x: .value("Date", r.date), y: .value(title, value(r)), series: .value("Series", "player"))
+            ForEach(Array(pts.enumerated()), id: \.offset) { _, r in
+                LineMark(x: .value("Date", r.x), y: .value(title, r[keyPath: value]), series: .value("Series", "player"))
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
                     .foregroundStyle(color)
-                PointMark(x: .value("Date", r.date), y: .value(title, value(r)))
+                PointMark(x: .value("Date", r.x), y: .value(title, r[keyPath: value]))
                     .symbolSize(14)
                     .foregroundStyle(color)
             }
@@ -123,8 +170,8 @@ private struct HistoryChart: View {
                         switch phase {
                         case .active(let loc):
                             guard let pf = proxy.plotFrame,
-                                  let d: Date = proxy.value(atX: loc.x - geo[pf].origin.x) else { return }
-                            let i = recs.indices.min { abs(recs[$0].date.timeIntervalSince(d)) < abs(recs[$1].date.timeIntervalSince(d)) }
+                                  let d: Double = proxy.value(atX: loc.x - geo[pf].origin.x) else { return }
+                            let i = pts.indices.min { abs(pts[$0].x - d) < abs(pts[$1].x - d) }
                             let o = geo.frame(in: .named("hist")).origin
                             hover = i.map { HoverInfo(index: $0, point: CGPoint(x: loc.x + o.x, y: loc.y + o.y)) }
                         case .ended:
@@ -134,11 +181,15 @@ private struct HistoryChart: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 3)) { _ in
+            AxisMarks(values: .automatic(desiredCount: 3)) { v in
                 AxisGridLine().foregroundStyle(grid)
                 if showX {
-                    AxisValueLabel(format: .dateTime.month(.defaultDigits).day())
-                        .font(axisFont).foregroundStyle(.white)
+                    AxisValueLabel {
+                        if let d = v.as(Double.self) {
+                            Text(Date(timeIntervalSinceReferenceDate: d).formatted(.dateTime.month(.defaultDigits).day()))
+                                .font(axisFont).foregroundColor(.white)
+                        }
+                    }
                 }
             }
         }

@@ -251,3 +251,24 @@ final class SolverTests: XCTestCase {
         print("SOLVER TIMES min=\(times.first!) median=\(times[times.count / 2]) max=\(times.last!)")
     }
 }
+
+final class HistoryGroupingTests: XCTestCase {
+    func testDailyAverages() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let d0 = Date(timeIntervalSince1970: 86400 * 20000)
+        let recs = [
+            SolveRecord(date: d0.addingTimeInterval(3600), seconds: 10, moves: 40, optimalMoves: 30),
+            SolveRecord(date: d0.addingTimeInterval(7200), seconds: 20, moves: 60, optimalMoves: nil),
+            SolveRecord(date: d0.addingTimeInterval(86400 + 5), seconds: 5, moves: 10),
+        ]
+        let a = HistoryStore.dailyAverages(recs.reversed(), calendar: cal)
+        XCTAssertEqual(a.count, 2)
+        XCTAssertEqual(a[0].count, 2)
+        XCTAssertEqual(a[0].moves, 50)
+        XCTAssertEqual(a[0].seconds, 15)
+        XCTAssertEqual(a[0].optimalMoves, 30)
+        XCTAssertEqual(a[0].tps, (4.0 + 3.0) / 2)
+        XCTAssertNil(a[1].optimalMoves)
+        XCTAssertEqual(a[1].day, d0.addingTimeInterval(86400))
+    }
+}
