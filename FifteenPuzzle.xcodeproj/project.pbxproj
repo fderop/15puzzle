@@ -20,6 +20,7 @@
 		A10000000000000000000015 /* Solver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* Solver.swift */; };
 		A10000000000000000000016 /* GameController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* GameController.swift */; };
 		A10000000000000000000017 /* PuzzleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000A /* PuzzleTests.swift */; };
+		A100000000000000000000F2 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000F1 /* AppIcon.icns */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +36,7 @@
 		A1000000000000000000000A /* PuzzleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PuzzleTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000018 /* FifteenPuzzle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FifteenPuzzle.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000019 /* FifteenPuzzleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FifteenPuzzleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A100000000000000000000F1 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = AppIcon.icns; path = Icon/AppIcon.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000000000000000000001B,
+				A100000000000000000000F1,
 				A1000000000000000000001C,
 				A1000000000000000000001D,
 			);
@@ -167,6 +170,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A100000000000000000000F2 /* AppIcon.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -244,7 +248,7 @@
 			};
 			name = Release;
 		};
-		A1000000000000000000002F /* Debug */ = {
+		A100000000000000000000F1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -319,7 +323,7 @@
 		A10000000000000000000027 /* Build configuration list for PBXNativeTarget "FifteenPuzzle" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A1000000000000000000002F /* Debug */,
+				A100000000000000000000F1 /* Debug */,
 				A10000000000000000000030 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;

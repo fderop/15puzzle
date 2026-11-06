@@ -25,7 +25,7 @@ private struct TabbedContent: View {
                     .opacity(tabs.tab == .play ? 1 : 0)
                     .allowsHitTesting(tabs.tab == .play)
                 if tabs.tab == .history {
-                    HistoryView(history: controller.history, s: s)
+                    HistoryView(history: controller.history, best: controller.best, s: s)
                         .padding(.top, 36 * s)
                 }
                 Picker("", selection: $tabs.tab) {
@@ -58,8 +58,6 @@ private struct PlayView: View {
                 .frame(width: 440 * s, height: 440 * s)
             Spacer().frame(height: 14 * s)
             ButtonsRow(controller: controller, s: s)
-            Spacer().frame(height: 10 * s)
-            BestView(controller: controller, s: s)
             ReviewLine(controller: controller, s: s)
         }
         .padding(.top, 36 * s)
@@ -76,13 +74,12 @@ struct StatsView: View {
             let t = controller.elapsed()
             let tps = String(format: "%.3f", t > 0 ? Double(controller.moves) / t : 0)
             HStack(spacing: 0) {
-                (Text("Time: ").foregroundColor(.white)
-                    + Text(String(format: "%.3f", t)).foregroundColor(Color(Palette.gold))
+                (Text(String(format: "%.3f", t)).foregroundColor(Color(Palette.gold))
                     + Text("s").foregroundColor(.white))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Moves: \(controller.moves)").foregroundColor(.white)
+                Text("\(controller.moves)").foregroundColor(.white)
                     .frame(maxWidth: .infinity, alignment: .center)
-                Text("TPS: \(tps)").foregroundColor(.white)
+                Text(tps).foregroundColor(.white)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .font(.system(size: 20 * s, weight: .regular).monospacedDigit())
@@ -144,15 +141,3 @@ struct ButtonsRow: View {
     }
 }
 
-struct BestView: View {
-    @ObservedObject var controller: GameController
-    let s: CGFloat
-    var body: some View {
-        let text: String = controller.best.map {
-            String(format: "Personal best: %.3f s   %d moves", $0.time, $0.moves)
-        } ?? "Personal best: \u{2014}   \u{2014} moves"
-        Text(text)
-            .font(.system(size: 15 * s, weight: .regular).monospacedDigit())
-            .foregroundColor(.white)
-    }
-}

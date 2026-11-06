@@ -3,31 +3,43 @@ import Charts
 
 struct HistoryView: View {
     @ObservedObject var history: HistoryStore
+    let best: PersonalBest?
     let s: CGFloat
     @State private var hover: HoverInfo?
 
     var body: some View {
         let recs = history.records
-        if recs.isEmpty {
-            Text("No solves yet")
-                .font(.system(size: 15 * s, weight: .regular))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            let lo = recs.map(\.date).min()!, hi = recs.map(\.date).max()!
-            let pad: TimeInterval = hi.timeIntervalSince(lo) < 1 ? 3600 : hi.timeIntervalSince(lo) * 0.03
-            let domain = lo.addingTimeInterval(-pad)...hi.addingTimeInterval(pad)
-            VStack(spacing: 4 * s) {
-                HistoryChart(recs: recs, title: "Moves", color: Color(white: 0.9), domain: domain, s: s, showX: false, hover: $hover) { Double($0.moves) }
-                HistoryChart(recs: recs, title: "Time (s)", color: Color(nsColor: Palette.gold), domain: domain, s: s, showX: false, hover: $hover) { $0.seconds }
-                HistoryChart(recs: recs, title: "TPS", color: Color(nsColor: Palette.rgb(0x75FFDC)), domain: domain, s: s, showX: true, hover: $hover) { $0.tps }
+        VStack(spacing: 8 * s) {
+            bestLine
+            if recs.isEmpty {
+                Text("No solves yet")
+                    .font(.system(size: 15 * s, weight: .regular))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                let lo = recs.map(\.date).min()!, hi = recs.map(\.date).max()!
+                let pad: TimeInterval = hi.timeIntervalSince(lo) < 1 ? 3600 : hi.timeIntervalSince(lo) * 0.03
+                let domain = lo.addingTimeInterval(-pad)...hi.addingTimeInterval(pad)
+                VStack(spacing: 4 * s) {
+                    HistoryChart(recs: recs, title: "Moves", color: Color(white: 0.9), domain: domain, s: s, showX: false, hover: $hover) { Double($0.moves) }
+                    HistoryChart(recs: recs, title: "Time (s)", color: Color(nsColor: Palette.gold), domain: domain, s: s, showX: false, hover: $hover) { $0.seconds }
+                    HistoryChart(recs: recs, title: "TPS", color: Color(nsColor: Palette.rgb(0x75FFDC)), domain: domain, s: s, showX: true, hover: $hover) { $0.tps }
+                }
+                .coordinateSpace(name: "hist")
+                .overlay { tooltip(recs) }
             }
-            .padding(.horizontal, 20 * s)
-            .padding(.top, 16 * s)
-            .padding(.bottom, 16 * s)
-            .coordinateSpace(name: "hist")
-            .overlay { tooltip(recs) }
         }
+        .padding(.horizontal, 20 * s)
+        .padding(.top, 16 * s)
+        .padding(.bottom, 16 * s)
+    }
+
+    private var bestLine: some View {
+        let text = best.map { String(format: "Best %.3fs \u{00B7} %d moves", $0.time, $0.moves) }
+            ?? "Best \u{2014}"
+        return Text(text)
+            .font(.system(size: 15 * s, weight: .regular).monospacedDigit())
+            .foregroundColor(.white)
     }
 }
 
