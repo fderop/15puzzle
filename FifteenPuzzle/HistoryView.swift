@@ -8,7 +8,13 @@ struct HistoryPoint {
     var tps: Double
     var optimal: Double?
     var deficit: Double?
-    var tip: [String]
+    var tip: [TipLine]
+}
+
+struct TipLine {
+    var text: String
+    var color: Color
+    init(_ text: String, _ color: Color) { self.text = text; self.color = color }
 }
 
 enum HistoryMode: String { case sequential, day }
@@ -23,31 +29,34 @@ struct HistoryView: View {
     private var mode: HistoryMode { HistoryMode(rawValue: modeRaw) ?? .sequential }
 
     static func points(_ recs: [SolveRecord], mode: HistoryMode) -> [HistoryPoint] {
+        let white = Color.white, moveC = Color(white: 0.9), gray = Color(nsColor: Palette.rgb(0x808080))
+        let coral = HistoryChart.coral, gold = Color(nsColor: Palette.rgb(0xFFD700)), mint = Color(nsColor: Palette.rgb(0x75FFDC))
         switch mode {
         case .sequential:
             return recs.sorted { $0.date < $1.date }.map { r in
-                var tip = [r.date.formatted(date: .abbreviated, time: .shortened),
-                           String(format: "Time: %.3f s", r.seconds), "Moves: \(r.moves)"]
+                var tip = [TipLine(r.date.formatted(date: .abbreviated, time: .shortened), white),
+                           TipLine("Moves: \(r.moves)", moveC)]
                 if let o = r.optimalMoves {
-                    tip.append(String(format: "optimal: %d moves (%.2f\u{00D7})", o, Double(r.moves) / Double(max(o, 1))))
-                    tip.append("deficit: \(r.moves - o) moves")
+                    tip.append(TipLine(String(format: "optimal: %d moves (%.2f\u{00D7})", o, Double(r.moves) / Double(max(o, 1))), gray))
+                    tip.append(TipLine("deficit: \(r.moves - o) moves", coral))
                 } else if r.scramble != nil {
-                    tip.append("optimal: \u{2026}")
+                    tip.append(TipLine("optimal: \u{2026}", gray))
                 }
-                tip.append(String(format: "TPS: %.3f", r.tps))
+                tip.append(TipLine(String(format: "Time: %.3f s", r.seconds), gold))
+                tip.append(TipLine(String(format: "TPS: %.3f", r.tps), mint))
                 return HistoryPoint(x: r.date.timeIntervalSinceReferenceDate, moves: Double(r.moves), seconds: r.seconds, tps: r.tps,
                                     optimal: r.optimalMoves.map(Double.init),
                                     deficit: r.optimalMoves.map { Double(r.moves - $0) }, tip: tip)
             }
         case .day:
             return HistoryStore.dailyAverages(recs).map { d in
-                var tip = [d.day.formatted(date: .abbreviated, time: .omitted),
-                           "\(d.count) solve\(d.count == 1 ? "" : "s")",
-                           String(format: "avg %.1f moves", d.moves),
-                           String(format: "avg %.3f s", d.seconds),
-                           String(format: "avg %.2f TPS", d.tps)]
-                if let o = d.optimalMoves { tip.append(String(format: "avg optimal %.1f", o)) }
-                if let f = d.deficit { tip.append(String(format: "avg deficit %.1f", f)) }
+                var tip = [TipLine(d.day.formatted(date: .abbreviated, time: .omitted), white),
+                           TipLine("\(d.count) solve\(d.count == 1 ? "" : "s")", white),
+                           TipLine(String(format: "avg %.1f moves", d.moves), moveC)]
+                if let o = d.optimalMoves { tip.append(TipLine(String(format: "avg optimal %.1f", o), gray)) }
+                if let f = d.deficit { tip.append(TipLine(String(format: "avg deficit %.1f", f), coral)) }
+                tip.append(TipLine(String(format: "avg %.3f s", d.seconds), gold))
+                tip.append(TipLine(String(format: "avg %.2f TPS", d.tps), mint))
                 return HistoryPoint(x: d.day.timeIntervalSinceReferenceDate, moves: d.moves, seconds: d.seconds,
                                     tps: d.tps, optimal: d.optimalMoves, deficit: d.deficit, tip: tip)
             }
@@ -109,10 +118,9 @@ extension HistoryView {
     @ViewBuilder fileprivate func tooltip(_ pts: [HistoryPoint]) -> some View {
         if let h = hover, pts.indices.contains(h.index) {
             VStack(alignment: .leading, spacing: 2 * s) {
-                ForEach(Array(pts[h.index].tip.enumerated()), id: \.offset) { _, l in Text(l) }
+                ForEach(Array(pts[h.index].tip.enumerated()), id: \.offset) { _, l in Text(l.text).foregroundColor(l.color) }
             }
             .font(.system(size: 12 * s, weight: .regular).monospacedDigit())
-            .foregroundColor(.white)
             .padding(6 * s)
             .background(Color(nsColor: Palette.rgb(0x1E1E1E)))
             .clipShape(RoundedRectangle(cornerRadius: 4 * s))
