@@ -30,11 +30,11 @@ func render(_ px: Int) -> Data {
     let outer = NSRect(x: 0, y: 0, width: side, height: side)
     rgb(0x121212).setFill()
     outer.fill()
-    let inset = side * 0.08
+    let inset = side * 0.13
     let grid = outer.insetBy(dx: inset, dy: inset)
     let cell = grid.width / 4
     NSGraphicsContext.saveGraphicsState()
-    NSBezierPath(roundedRect: grid, xRadius: side * 0.16, yRadius: side * 0.16).addClip()
+    NSBezierPath(roundedRect: grid, xRadius: side * 0.12, yRadius: side * 0.12).addClip()
     for r in 0..<4 { for c in 0..<4 {
         let n = r * 4 + c + 1
         if n == 16 { continue }
