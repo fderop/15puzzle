@@ -75,6 +75,7 @@ struct DayAverage: Equatable {
     var seconds: Double
     var tps: Double
     var optimalMoves: Double?
+    var deficit: Double?   // mean(moves - optimal) over records with an optimal
 }
 
 extension HistoryStore {
@@ -86,7 +87,8 @@ extension HistoryStore {
                            moves: mean(rs.map { Double($0.moves) })!,
                            seconds: mean(rs.map(\.seconds))!,
                            tps: mean(rs.map(\.tps))!,
-                           optimalMoves: mean(rs.compactMap { $0.optimalMoves.map(Double.init) }))
+                           optimalMoves: mean(rs.compactMap { $0.optimalMoves.map(Double.init) }),
+                           deficit: mean(rs.compactMap { r in r.optimalMoves.map { Double(r.moves - $0) } }))
             }
             .sorted { $0.day < $1.day }
     }

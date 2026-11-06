@@ -268,7 +268,9 @@ final class HistoryGroupingTests: XCTestCase {
         XCTAssertEqual(a[0].seconds, 15)
         XCTAssertEqual(a[0].optimalMoves, 30)
         XCTAssertEqual(a[0].tps, (4.0 + 3.0) / 2)
+        XCTAssertEqual(a[0].deficit, 10)
         XCTAssertNil(a[1].optimalMoves)
+        XCTAssertNil(a[1].deficit)
         XCTAssertEqual(a[1].day, d0.addingTimeInterval(86400))
     }
 }

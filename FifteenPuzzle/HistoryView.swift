@@ -7,6 +7,7 @@ struct HistoryPoint {
     var seconds: Double
     var tps: Double
     var optimal: Double?
+    var deficit: Double?
     var tip: [String]
 }
 
@@ -29,12 +30,14 @@ struct HistoryView: View {
                            String(format: "Time: %.3f s", r.seconds), "Moves: \(r.moves)"]
                 if let o = r.optimalMoves {
                     tip.append(String(format: "optimal: %d moves (%.2f\u{00D7})", o, Double(r.moves) / Double(max(o, 1))))
+                    tip.append("deficit: \(r.moves - o) moves")
                 } else if r.scramble != nil {
                     tip.append("optimal: \u{2026}")
                 }
                 tip.append(String(format: "TPS: %.3f", r.tps))
                 return HistoryPoint(x: r.date.timeIntervalSinceReferenceDate, moves: Double(r.moves), seconds: r.seconds, tps: r.tps,
-                                    optimal: r.optimalMoves.map(Double.init), tip: tip)
+                                    optimal: r.optimalMoves.map(Double.init),
+                                    deficit: r.optimalMoves.map { Double(r.moves - $0) }, tip: tip)
             }
         case .day:
             return HistoryStore.dailyAverages(recs).map { d in
@@ -44,8 +47,9 @@ struct HistoryView: View {
                            String(format: "avg %.3f s", d.seconds),
                            String(format: "avg %.2f TPS", d.tps)]
                 if let o = d.optimalMoves { tip.append(String(format: "avg optimal %.1f", o)) }
+                if let f = d.deficit { tip.append(String(format: "avg deficit %.1f", f)) }
                 return HistoryPoint(x: d.day.timeIntervalSinceReferenceDate, moves: d.moves, seconds: d.seconds,
-                                    tps: d.tps, optimal: d.optimalMoves, tip: tip)
+                                    tps: d.tps, optimal: d.optimalMoves, deficit: d.deficit, tip: tip)
             }
         }
     }
@@ -128,6 +132,7 @@ private struct HistoryChart: View {
     let showX: Bool
     @Binding var hover: HoverInfo?
     let value: KeyPath<HistoryPoint, Double>
+    static let coral = Color(nsColor: Palette.rgb(0xFF6464))
 
     var body: some View {
         let grid = Color(nsColor: Palette.button).opacity(0.25)
@@ -140,8 +145,23 @@ private struct HistoryChart: View {
                 PointMark(x: .value("Date", pts[h.index].x), y: .value(title, pts[h.index][keyPath: value]))
                     .symbolSize(70)
                     .foregroundStyle(color)
+                if title == "Moves", let f = pts[h.index].deficit {
+                    PointMark(x: .value("Date", pts[h.index].x), y: .value("Deficit", f))
+                        .symbolSize(50)
+                        .foregroundStyle(Self.coral)
+                }
             }
             if title == "Moves" {
+                ForEach(Array(pts.enumerated()), id: \.offset) { _, r in
+                    if let f = r.deficit {
+                        LineMark(x: .value("Date", r.x), y: .value("Deficit", f), series: .value("Series", "deficit"))
+                            .lineStyle(StrokeStyle(lineWidth: 1))
+                            .foregroundStyle(Self.coral)
+                        PointMark(x: .value("Date", r.x), y: .value("Deficit", f))
+                            .symbolSize(8)
+                            .foregroundStyle(Self.coral)
+                    }
+                }
                 ForEach(Array(pts.enumerated()), id: \.offset) { _, r in
                     if let o = r.optimal {
                         LineMark(x: .value("Date", r.x), y: .value("Optimal", o), series: .value("Series", "optimal"))
