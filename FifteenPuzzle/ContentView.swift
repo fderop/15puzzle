@@ -167,23 +167,29 @@ struct OptimalCounts: View {
     var body: some View {
         HStack(spacing: 24 * s) {
             Text(controller.solutionLength.map(String.init) ?? "…")
+                .frame(width: 32 * s, alignment: .trailing)
                 .accessibilityLabel("Original optimal moves")
                 .accessibilityValue(controller.solutionLength.map(String.init) ?? "Calculating")
-            Text(remainingCount)
-                .accessibilityLabel("Remaining optimal moves and deficit")
-                .accessibilityValue(remainingCount)
+            HStack(spacing: 8 * s) {
+                Text(controller.remainingOptimalMoves.map(String.init) ?? "…")
+                    .frame(width: 32 * s, alignment: .trailing)
+                    .accessibilityLabel("Remaining optimal moves")
+                Text(deficitText)
+                    .frame(width: 100 * s, alignment: .leading)
+                    .accessibilityLabel("Deficit")
+            }
         }
         .font(.system(size: 13 * s).monospacedDigit())
         .foregroundColor(.white)
         .padding(.top, 6 * s)
     }
 
-    private var remainingCount: String {
-        guard let remaining = controller.remainingOptimalMoves else { return "…" }
-        guard let original = controller.solutionLength else { return "\(remaining)" }
+    private var deficitText: String {
+        guard let remaining = controller.remainingOptimalMoves,
+              let original = controller.solutionLength else { return "(…)" }
         let moves = controller.phase == .reviewing ? controller.reviewPos : controller.moves
         let deficit = moves + remaining - original
-        return "\(remaining) (\(deficit >= 0 ? "+" : "")\(deficit))"
+        return "(\(deficit >= 0 ? "+" : "")\(deficit))"
     }
 
 }
