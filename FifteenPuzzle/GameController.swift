@@ -23,8 +23,12 @@ final class GameController: ObservableObject {
 
     @Published private(set) var remainingOptimalMoves: Int?
     @Published var ghostEnabled = false {
-        didSet { onHintsChanged?() }
+        didSet {
+            if ghostEnabled { usedAssistance = true }
+            onHintsChanged?()
+        }
     }
+    private var usedAssistance = false
     private(set) var ghostPath: [Int] = []
     var onHintsChanged: (() -> Void)?
     private var currentSolveTask: Task<Void, Never>?
@@ -39,6 +43,8 @@ final class GameController: ObservableObject {
     private var planGeneration = UUID()
 
     func beginPlan() {
+        usedAssistance = true
+        ghostEnabled = false
         cancelPlan()
         planning = true
         planStatus = "Drag tiles to their target positions."
@@ -139,13 +145,15 @@ final class GameController: ObservableObject {
         if tree.current.board.isSolved {
             finalTime = now - startTime
             phase = .solved
-            history.append(SolveRecord(date: Date(), seconds: finalTime, moves: moves,
-                                            scramble: tree.root.board.cells, optimalMoves: solutionLength))
-            if best == nil || finalTime < best!.time {
-                let pb = PersonalBest(time: finalTime, moves: moves)
-                best = pb
-                UserDefaults.standard.set(pb.time, forKey: Self.timeKey)
-                UserDefaults.standard.set(pb.moves, forKey: Self.movesKey)
+            if !usedAssistance {
+                history.append(SolveRecord(date: Date(), seconds: finalTime, moves: moves,
+                                          scramble: tree.root.board.cells, optimalMoves: solutionLength))
+                if best == nil || finalTime < best!.time {
+                    let pb = PersonalBest(time: finalTime, moves: moves)
+                    best = pb
+                    UserDefaults.standard.set(pb.time, forKey: Self.timeKey)
+                    UserDefaults.standard.set(pb.moves, forKey: Self.movesKey)
+                }
             }
         }
         if let path = planPath, !path.isEmpty {
@@ -194,6 +202,7 @@ final class GameController: ObservableObject {
 
     func restart() {
         cancelPlan()
+        usedAssistance = ghostEnabled
         tree = MoveTree(root: PuzzleBoard.shuffled(emptyIndex: cursorCellIndex?()))
         moves = 0
         finalTime = 0

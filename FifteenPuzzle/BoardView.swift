@@ -238,8 +238,8 @@ final class BoardView: NSView {
 
     private func drawGhost(cellSize cs: CGFloat) {
         let indices: [Int]
-        if let plan = controller.planPath, !plan.isEmpty {
-            indices = [controller.board.emptyIndex] + Array(plan.prefix(5))
+        if let plan = controller.planPath {
+            indices = plan.isEmpty ? [] : [controller.board.emptyIndex] + Array(plan.prefix(5))
         } else if controller.ghostEnabled { indices = controller.ghostPath }
         else { indices = [] }
         guard let first = indices.first else { return }
@@ -250,7 +250,28 @@ final class BoardView: NSView {
         }
         let path = NSBezierPath()
         path.move(to: center(first))
-        for index in indices.dropFirst() { path.line(to: center(index)) }
+        let points = indices.map(center)
+        for step in 1..<points.count {
+            let corner = points[step]
+            if step == points.count - 1 {
+                path.line(to: corner)
+                continue
+            }
+            let previous = points[step - 1], next = points[step + 1]
+            let radius = cs * 0.12
+            func near(_ point: NSPoint) -> NSPoint {
+                let dx = point.x - corner.x, dy = point.y - corner.y
+                let scale = radius / hypot(dx, dy)
+                return NSPoint(x: corner.x + dx * scale, y: corner.y + dy * scale)
+            }
+            let entry = near(previous), exit = near(next)
+            path.line(to: entry)
+            path.curve(to: exit,
+                       controlPoint1: NSPoint(x: entry.x + (corner.x - entry.x) * 2 / 3,
+                                              y: entry.y + (corner.y - entry.y) * 2 / 3),
+                       controlPoint2: NSPoint(x: exit.x + (corner.x - exit.x) * 2 / 3,
+                                              y: exit.y + (corner.y - exit.y) * 2 / 3))
+        }
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         NSColor.black.withAlphaComponent(0.55).setStroke()
@@ -259,19 +280,7 @@ final class BoardView: NSView {
         NSColor.white.withAlphaComponent(0.9).setStroke()
         path.lineWidth = cs * 0.035
         path.stroke()
-        for (step, index) in indices.dropFirst().enumerated() {
-            let point = center(index)
-            let radius = cs * 0.09
-            NSColor.white.setFill()
-            NSBezierPath(ovalIn: NSRect(x: point.x - radius, y: point.y - radius,
-                                       width: radius * 2, height: radius * 2)).fill()
-            let label = NSAttributedString(string: "\(step + 1)", attributes: [
-                .font: NSFont.systemFont(ofSize: cs * 0.12, weight: .bold),
-                .foregroundColor: Palette.numberInk
-            ])
-            let size = label.size()
-            label.draw(at: NSPoint(x: point.x - size.width / 2, y: point.y - size.height / 2))
-        }
+
     }
 }
 
