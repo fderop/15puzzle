@@ -21,6 +21,15 @@ final class GameController: ObservableObject {
     @Published private(set) var awaitingSolution = false
     @Published private(set) var reviewPos = 0
 
+    @Published private(set) var remainingOptimalMoves: Int?
+    @Published var ghostEnabled = false {
+        didSet { onHintsChanged?() }
+    }
+    private(set) var ghostPath: [Int] = []
+    var onHintsChanged: (() -> Void)?
+    private var currentSolveTask: Task<Void, Never>?
+    private var optimalPaths: [[UInt8]: [Int]] = [:]
+
     /// Called after the displayed board is replaced wholesale (restart, navigation, review).
     var onBoardReplaced: (() -> Void)?
 
@@ -48,6 +57,7 @@ final class GameController: ObservableObject {
             best = PersonalBest(time: d.double(forKey: Self.timeKey), moves: d.integer(forKey: Self.movesKey))
         }
         startSolve()
+        updateHints()
         history.fillMissing()
     }
 
@@ -78,6 +88,7 @@ final class GameController: ObservableObject {
                 UserDefaults.standard.set(pb.moves, forKey: Self.movesKey)
             }
         }
+        updateHints()
         return true
     }
 
@@ -106,6 +117,7 @@ final class GameController: ObservableObject {
         }
         if changed {
             if phase != .reviewing { moves = tree.current.depth }
+            updateHints()
             onBoardReplaced?()
             if n == .back { onBackwardNavigation?() }
         }
@@ -120,7 +132,9 @@ final class GameController: ObservableObject {
         reviewBoards = []
         awaitingSolution = false
         phase = .idle
+        optimalPaths = [:]
         startSolve()
+        updateHints()
         onBoardReplaced?()
     }
 
@@ -148,8 +162,51 @@ final class GameController: ObservableObject {
         guard scramble == tree.root.board else { return }   // stale
         solution = s
         solutionLength = s.count
+        cachePath(s, from: scramble)
+        updateHints()
         history.setOptimal(scramble: scramble.cells, moves: s.count)
         if awaitingSolution { awaitingSolution = false; enterReview() }
+    }
+
+    private func cachePath(_ path: [Int], from start: PuzzleBoard) {
+        var b = start
+        for step in 0...path.count {
+            optimalPaths[b.cells] = Array(path.dropFirst(step))
+            if step < path.count { b.move(at: path[step]) }
+        }
+    }
+
+    private func updateHints() {
+        currentSolveTask?.cancel()
+        let position = board
+        if let path = optimalPaths[position.cells] {
+            showHints(path)
+            return
+        }
+        if position.isSolved {
+            showHints([])
+            return
+        }
+        remainingOptimalMoves = nil
+        ghostPath = []
+        onHintsChanged?()
+        // The root solver already owns this position.
+        if position == tree.root.board { return }
+        currentSolveTask = Task.detached(priority: .utility) { [weak self] in
+            let path = PuzzleSolver.solve(position, shouldCancel: { Task.isCancelled })
+            guard let path, !Task.isCancelled else { return }
+            DispatchQueue.main.async {
+                guard let self, self.board == position else { return }
+                self.cachePath(path, from: position)
+                self.showHints(path)
+            }
+        }
+    }
+
+    private func showHints(_ path: [Int]) {
+        remainingOptimalMoves = path.count
+        ghostPath = path.isEmpty ? [] : [board.emptyIndex] + Array(path.prefix(5))
+        onHintsChanged?()
     }
 
     func beginReview() {
@@ -165,6 +222,7 @@ final class GameController: ObservableObject {
         reviewBoards = boards
         reviewPos = 0
         phase = .reviewing
+        updateHints()
         onBoardReplaced?()
     }
 }

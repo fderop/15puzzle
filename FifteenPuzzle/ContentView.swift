@@ -58,6 +58,7 @@ private struct PlayView: View {
                 .frame(width: 440 * s, height: 440 * s)
             Spacer().frame(height: 14 * s)
             ButtonsRow(controller: controller, s: s)
+            OptimalCounts(controller: controller, s: s)
             ReviewLine(controller: controller, s: s)
         }
         .padding(.top, 36 * s)
@@ -130,6 +131,11 @@ struct ButtonsRow: View {
 
     var body: some View {
         HStack(spacing: 12 * s) {
+            Button(controller.ghostEnabled ? "Ghost: on" : "Ghost: off") {
+                controller.ghostEnabled.toggle()
+            }
+            .accessibilityLabel("Ghost")
+            .accessibilityValue(controller.ghostEnabled ? "On" : "Off")
             if controller.phase == .solved || controller.phase == .reviewing {
                 Button("Review") { controller.beginReview() }
                     .disabled(controller.phase == .reviewing || controller.awaitingSolution)
@@ -141,3 +147,18 @@ struct ButtonsRow: View {
     }
 }
 
+
+struct OptimalCounts: View {
+    @ObservedObject var controller: GameController
+    let s: CGFloat
+
+    var body: some View {
+        HStack(spacing: 24 * s) {
+            Text("Original optimal: \(controller.solutionLength.map(String.init) ?? "…")")
+            Text("Remaining optimal: \(controller.remainingOptimalMoves.map(String.init) ?? "…")")
+        }
+        .font(.system(size: 13 * s).monospacedDigit())
+        .foregroundColor(.white)
+        .padding(.top, 6 * s)
+    }
+}

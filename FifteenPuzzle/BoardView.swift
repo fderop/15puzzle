@@ -30,6 +30,7 @@ final class BoardView: NSView {
             needsDisplay = true
             controller?.cursorCellIndex = { [weak self] in self?.cursorCell?.index }
             controller?.onBackwardNavigation = { [weak self] in self?.cursorActive = false }
+            controller?.onHintsChanged = { [weak self] in self?.needsDisplay = true }
             controller?.onBoardReplaced = { [weak self] in self?.boardDidReset() }
         }
     }
@@ -179,6 +180,40 @@ final class BoardView: NSView {
             let asc = (cachedAttrs[.font] as! NSFont).ascender
             // Flipped view: baseline sits gb.midY below the cell center so the glyph box is centered.
             s.draw(at: NSPoint(x: r.midX - gb.midX, y: r.midY + gb.midY - asc))
+        }
+        drawGhost(cellSize: cs)
+    }
+
+    private func drawGhost(cellSize cs: CGFloat) {
+        guard controller.ghostEnabled, let first = controller.ghostPath.first else { return }
+        func center(_ index: Int) -> NSPoint {
+            let cell = Cell(index: index)
+            return NSPoint(x: (CGFloat(cell.col) + 0.5) * cs,
+                           y: (CGFloat(cell.row) + 0.5) * cs)
+        }
+        let path = NSBezierPath()
+        path.move(to: center(first))
+        for index in controller.ghostPath.dropFirst() { path.line(to: center(index)) }
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        NSColor.black.withAlphaComponent(0.55).setStroke()
+        path.lineWidth = cs * 0.085
+        path.stroke()
+        NSColor.white.withAlphaComponent(0.9).setStroke()
+        path.lineWidth = cs * 0.035
+        path.stroke()
+        for (step, index) in controller.ghostPath.dropFirst().enumerated() {
+            let point = center(index)
+            let radius = cs * 0.09
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: NSRect(x: point.x - radius, y: point.y - radius,
+                                       width: radius * 2, height: radius * 2)).fill()
+            let label = NSAttributedString(string: "\(step + 1)", attributes: [
+                .font: NSFont.systemFont(ofSize: cs * 0.12, weight: .bold),
+                .foregroundColor: Palette.numberInk
+            ])
+            let size = label.size()
+            label.draw(at: NSPoint(x: point.x - size.width / 2, y: point.y - size.height / 2))
         }
     }
 }
