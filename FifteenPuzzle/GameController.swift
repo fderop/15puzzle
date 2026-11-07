@@ -277,8 +277,22 @@ final class GameController: ObservableObject {
         onHintsChanged?()
         // The root solver already owns this position.
         if position == tree.root.board { return }
+        // Walk back to a cached ancestor to obtain a legal upper bound.
+        // After one move from a known optimum, only the shorter alternative needs a search.
+        var node = tree.current
+        var route: [Int] = []
+        var upperBound: [Int]?
+        while let parent = node.parent {
+            route.append(parent.board.emptyIndex)
+            if let cached = optimalPaths[parent.board.cells] {
+                upperBound = route + cached
+                break
+            }
+            node = parent
+        }
+        let knownRoute = upperBound
         currentSolveTask = Task.detached(priority: .utility) { [weak self] in
-            let path = PuzzleSolver.solve(position, shouldCancel: { Task.isCancelled })
+            let path = PuzzleSolver.solve(position, upperBound: knownRoute, shouldCancel: { Task.isCancelled })
             guard let path, !Task.isCancelled else { return }
             DispatchQueue.main.async {
                 guard let self, self.board == position else { return }
