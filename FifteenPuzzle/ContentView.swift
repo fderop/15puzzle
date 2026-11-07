@@ -166,12 +166,12 @@ struct OptimalCounts: View {
 
     var body: some View {
         HStack(spacing: 24 * s) {
-            Text(controller.solutionLength.map(String.init) ?? "…")
+            Text(controller.displayedOptimalCounts.map { String($0.original) } ?? "")
                 .frame(width: 32 * s, alignment: .trailing)
                 .accessibilityLabel("Original optimal moves")
-                .accessibilityValue(controller.solutionLength.map(String.init) ?? "Calculating")
+                .accessibilityValue(controller.displayedOptimalCounts.map { String($0.original) } ?? "")
             HStack(spacing: 8 * s) {
-                Text(controller.remainingOptimalMoves.map(String.init) ?? "…")
+                Text(controller.displayedOptimalCounts.map { String($0.remaining) } ?? "")
                     .frame(width: 32 * s, alignment: .trailing)
                     .accessibilityLabel("Remaining optimal moves")
                 Text(deficitText)
@@ -185,10 +185,8 @@ struct OptimalCounts: View {
     }
 
     private var deficitText: String {
-        guard let remaining = controller.remainingOptimalMoves,
-              let original = controller.solutionLength else { return "(…)" }
-        let moves = controller.phase == .reviewing ? controller.reviewPos : controller.moves
-        let deficit = moves + remaining - original
+        guard let counts = controller.displayedOptimalCounts else { return "" }
+        let deficit = counts.deficit
         return "(\(deficit >= 0 ? "+" : "")\(deficit))"
     }
 

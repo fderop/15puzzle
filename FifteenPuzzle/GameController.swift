@@ -4,6 +4,12 @@ import QuartzCore
 enum GamePhase { case idle, running, solved, reviewing }
 enum Navigation { case back, forward, prevSibling, nextSibling, start, end }
 
+struct OptimalMoveCounts {
+    let original: Int
+    let remaining: Int
+    let deficit: Int
+}
+
 struct PersonalBest: Equatable { var time: Double; var moves: Int }
 
 enum AppTab { case play, history }
@@ -21,6 +27,7 @@ final class GameController: ObservableObject {
     @Published private(set) var awaitingSolution = false
     @Published private(set) var reviewPos = 0
 
+    @Published private(set) var displayedOptimalCounts: OptimalMoveCounts?
     @Published private(set) var remainingOptimalMoves: Int?
     @Published var ghostEnabled = false {
         didSet {
@@ -283,6 +290,11 @@ final class GameController: ObservableObject {
 
     private func showHints(_ path: [Int]) {
         remainingOptimalMoves = path.count
+        if let original = solutionLength {
+            let count = phase == .reviewing ? reviewPos : moves
+            displayedOptimalCounts = OptimalMoveCounts(original: original, remaining: path.count,
+                                                       deficit: count + path.count - original)
+        }
         ghostPath = path.isEmpty ? [] : [board.emptyIndex] + Array(path.prefix(5))
         onHintsChanged?()
     }
