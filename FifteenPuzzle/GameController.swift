@@ -30,6 +30,61 @@ final class GameController: ObservableObject {
     private var currentSolveTask: Task<Void, Never>?
     private var optimalPaths: [[UInt8]: [Int]] = [:]
 
+    @Published private(set) var planning = false
+    @Published private(set) var planStatus = ""
+    @Published private(set) var planBusy = false
+    private(set) var planTargets: [UInt8: Int] = [:]
+    private(set) var planPath: [Int]?
+    private var planTask: Task<Void, Never>?
+    private var planGeneration = UUID()
+
+    func beginPlan() {
+        cancelPlan()
+        planning = true
+        planStatus = "Drag tiles to their target positions."
+        onBoardReplaced?()
+    }
+
+    func placeTarget(tile: UInt8, at index: Int) {
+        if board.cells[index] == tile { planTargets.removeValue(forKey: tile) }
+        else { planTargets[tile] = index }
+        onHintsChanged?()
+    }
+
+    func cancelPlan() {
+        planTask?.cancel()
+        planGeneration = UUID()
+        planning = false
+        planBusy = false
+        planTargets = [:]
+        planPath = nil
+        planStatus = ""
+        onBoardReplaced?()
+    }
+
+    func solvePlan() {
+        planning = false
+        planBusy = true
+        planPath = nil
+        planStatus = "Finding a shortest path…"
+        onBoardReplaced?()
+        let position = board, goals = planTargets, generation = UUID()
+        planGeneration = generation
+        planTask?.cancel()
+        planTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let path = ArrangementSolver.solve(position, goals: goals, shouldCancel: { Task.isCancelled })
+            guard !Task.isCancelled else { return }
+            DispatchQueue.main.async {
+                guard let self, self.planGeneration == generation else { return }
+                self.planBusy = false
+                self.planPath = path
+                self.planStatus = path.map { $0.isEmpty ? "Targets reached." : "Target path: \($0.count) moves" }
+                    ?? "Impossible: these targets cannot share a legal board."
+                self.onHintsChanged?()
+            }
+        }
+    }
+
     /// Called after the displayed board is replaced wholesale (restart, navigation, review).
     var onBoardReplaced: (() -> Void)?
 
@@ -71,7 +126,12 @@ final class GameController: ObservableObject {
 
     /// Mouse path. Tries to slide the tile at `index`.
     func tryMove(at index: Int) -> Bool {
-        if phase == .solved || phase == .reviewing { return false }
+        if planning || planBusy || phase == .reviewing { return false }
+        if phase == .solved {
+            if planPath?.isEmpty != false { return false }
+            startTime = CACurrentMediaTime() - finalTime
+            phase = .running
+        }
         guard tree.play(cellIndex: index) else { return false }
         let now = CACurrentMediaTime()
         if phase == .idle { startTime = now; phase = .running }
@@ -88,6 +148,12 @@ final class GameController: ObservableObject {
                 UserDefaults.standard.set(pb.moves, forKey: Self.movesKey)
             }
         }
+        if let path = planPath, !path.isEmpty {
+            if path.first == index {
+                planPath = Array(path.dropFirst())
+                planStatus = planPath!.isEmpty ? "Targets reached." : "Target path: \(planPath!.count) moves"
+            } else { solvePlan() }
+        }
         updateHints()
         return true
     }
@@ -95,6 +161,8 @@ final class GameController: ObservableObject {
     /// Arrow-key navigation updates the move count to the current history depth.
     @discardableResult
     func navigate(_ n: Navigation) -> Bool {
+        if planning || planBusy { return false }
+        if planPath != nil || !planStatus.isEmpty { cancelPlan() }
         var changed = false
         if phase == .reviewing {
             let last = reviewBoards.count - 1
@@ -125,6 +193,7 @@ final class GameController: ObservableObject {
     }
 
     func restart() {
+        cancelPlan()
         tree = MoveTree(root: PuzzleBoard.shuffled(emptyIndex: cursorCellIndex?()))
         moves = 0
         finalTime = 0
@@ -210,6 +279,7 @@ final class GameController: ObservableObject {
     }
 
     func beginReview() {
+        cancelPlan()
         guard phase == .solved else { return }
         if solution != nil { enterReview() } else { awaitingSolution = true }
     }

@@ -35,6 +35,8 @@ final class BoardView: NSView {
         }
     }
 
+    private var draggedTile: UInt8?
+    private var dragPoint: CGPoint?
     private var cursorActive = true
     private var lastCell: Cell?
     private var lastPoint: CGPoint?
@@ -83,7 +85,31 @@ final class BoardView: NSView {
     // MARK: Events -> one path
 
     override func mouseMoved(with event: NSEvent) { handle(event) }
-    override func mouseDragged(with event: NSEvent) { handle(event) }
+    override func mouseDown(with event: NSEvent) {
+        guard controller.planning else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let cell = GridTraversal.cell(at: point, cellSize: cellSize) else { return }
+        let ghost = controller.planTargets.filter { $0.value == cell.index }.keys.sorted().last
+        let tile = ghost ?? controller.board.cells[cell.index]
+        if tile != 0 { draggedTile = tile; dragPoint = point; needsDisplay = true }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if controller.planning {
+            dragPoint = convert(event.locationInWindow, from: nil)
+            needsDisplay = true
+        } else { handle(event) }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if controller.planning, let tile = draggedTile,
+           let cell = GridTraversal.cell(at: convert(event.locationInWindow, from: nil), cellSize: cellSize) {
+            controller.placeTarget(tile: tile, at: cell.index)
+        }
+        draggedTile = nil
+        dragPoint = nil
+        needsDisplay = true
+    }
     override func rightMouseDragged(with event: NSEvent) { handle(event) }
     override func otherMouseDragged(with event: NSEvent) { handle(event) }
     override func mouseEntered(with event: NSEvent) { handle(event) }
@@ -100,6 +126,7 @@ final class BoardView: NSView {
     }
 
     private func process(to p: CGPoint) {
+        if controller.planning || controller.planBusy { return }
         let cs = cellSize
         let path = GridTraversal.cells(from: lastPoint, to: p, cellSize: cs)
         lastPoint = p
@@ -149,6 +176,8 @@ final class BoardView: NSView {
     }
 
     func boardDidReset() {
+        draggedTile = nil
+        dragPoint = nil
         needsDisplay = true
         cursorActive = true
         syncLastCellToCursor()
@@ -169,23 +198,51 @@ final class BoardView: NSView {
                            .foregroundColor: Palette.numberInk, .paragraphStyle: style]
         }
         let cells = controller.board.cells
-        for i in 0..<PuzzleBoard.count {
-            let c = Cell(index: i)
-            let r = NSRect(x: CGFloat(c.col) * cs, y: CGFloat(c.row) * cs, width: cs, height: cs)
-            guard r.intersects(dirtyRect), cells[i] != 0 else { continue }
-            Palette.tileColor(Int(cells[i])).setFill()
-            r.fill()
-            let s = NSAttributedString(string: "\(cells[i])", attributes: cachedAttrs)
-            let gb = CTLineGetImageBounds(CTLineCreateWithAttributedString(s), nil)
-            let asc = (cachedAttrs[.font] as! NSFont).ascender
-            // Flipped view: baseline sits gb.midY below the cell center so the glyph box is centered.
-            s.draw(at: NSPoint(x: r.midX - gb.midX, y: r.midY + gb.midY - asc))
+        func rect(_ index: Int) -> NSRect {
+            let cell = Cell(index: index)
+            let r = NSRect(x: CGFloat(cell.col) * cs, y: CGFloat(cell.row) * cs, width: cs, height: cs)
+            return controller.planning ? r.insetBy(dx: cs * 0.025, dy: cs * 0.025) : r
         }
-        drawGhost(cellSize: cs)
+        func tile(_ number: UInt8, in r: NSRect, ghost: Bool = false) {
+            Palette.tileColor(Int(number)).withAlphaComponent(ghost ? 0.75 : 1).setFill()
+            r.fill()
+            if ghost {
+                NSColor.white.withAlphaComponent(0.9).setStroke()
+                let border = NSBezierPath(rect: r.insetBy(dx: 1, dy: 1))
+                border.lineWidth = 2
+                border.stroke()
+            }
+            let label = NSAttributedString(string: "\(number)", attributes: cachedAttrs)
+            let gb = CTLineGetImageBounds(CTLineCreateWithAttributedString(label), nil)
+            let asc = (cachedAttrs[.font] as! NSFont).ascender
+            label.draw(at: NSPoint(x: r.midX - gb.midX, y: r.midY + gb.midY - asc))
+        }
+        for i in 0..<PuzzleBoard.count where cells[i] != 0 {
+            let r = rect(i)
+            if controller.planning && (controller.planTargets[cells[i]] != nil || draggedTile == cells[i]) {
+                Palette.button.withAlphaComponent(0.45).setFill()
+                r.fill()
+            } else { tile(cells[i], in: r) }
+        }
+        if controller.planning {
+            for number in controller.planTargets.keys.sorted() where number != draggedTile {
+                let r = rect(controller.planTargets[number]!).offsetBy(dx: cs * 0.045, dy: cs * 0.045)
+                tile(number, in: r, ghost: true)
+            }
+            if let number = draggedTile, let point = dragPoint {
+                tile(number, in: NSRect(x: point.x - cs * 0.475, y: point.y - cs * 0.475,
+                                       width: cs * 0.95, height: cs * 0.95), ghost: true)
+            }
+        } else { drawGhost(cellSize: cs) }
     }
 
     private func drawGhost(cellSize cs: CGFloat) {
-        guard controller.ghostEnabled, let first = controller.ghostPath.first else { return }
+        let indices: [Int]
+        if let plan = controller.planPath, !plan.isEmpty {
+            indices = [controller.board.emptyIndex] + Array(plan.prefix(5))
+        } else if controller.ghostEnabled { indices = controller.ghostPath }
+        else { indices = [] }
+        guard let first = indices.first else { return }
         func center(_ index: Int) -> NSPoint {
             let cell = Cell(index: index)
             return NSPoint(x: (CGFloat(cell.col) + 0.5) * cs,
@@ -193,7 +250,7 @@ final class BoardView: NSView {
         }
         let path = NSBezierPath()
         path.move(to: center(first))
-        for index in controller.ghostPath.dropFirst() { path.line(to: center(index)) }
+        for index in indices.dropFirst() { path.line(to: center(index)) }
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         NSColor.black.withAlphaComponent(0.55).setStroke()
@@ -202,7 +259,7 @@ final class BoardView: NSView {
         NSColor.white.withAlphaComponent(0.9).setStroke()
         path.lineWidth = cs * 0.035
         path.stroke()
-        for (step, index) in controller.ghostPath.dropFirst().enumerated() {
+        for (step, index) in indices.dropFirst().enumerated() {
             let point = center(index)
             let radius = cs * 0.09
             NSColor.white.setFill()

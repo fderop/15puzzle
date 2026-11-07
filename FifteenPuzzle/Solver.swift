@@ -175,3 +175,80 @@ enum PuzzleSolver {
         }
     }
 }
+
+/// Shortest path to a partial arrangement. Other tiles can finish anywhere.
+enum ArrangementSolver {
+    static func solve(_ board: PuzzleBoard, goals: [UInt8: Int],
+                      shouldCancel: () -> Bool) -> [Int]? {
+        if Set(goals.values).count != goals.count { return nil }
+        // With at most one unspecified tile, the goals determine a complete board.
+        if goals.count >= 14 {
+            var cells = [UInt8](repeating: 0, count: 16)
+            for (tile, index) in goals { cells[index] = tile }
+            let free = cells.indices.filter { cells[$0] == 0 }
+            let missing = (UInt8(1)...UInt8(15)).filter { goals[$0] == nil }
+            let reachable = free.contains { blank in
+                var candidate = cells
+                let slots = free.filter { $0 != blank }
+                for (index, tile) in zip(slots, missing) { candidate[index] = tile }
+                return PuzzleBoard.isSolvable(candidate)
+            }
+            if !reachable { return nil }
+        }
+        var targets = [Int](repeating: -1, count: 16)
+        for (tile, index) in goals { targets[Int(tile)] = index }
+        var cells = board.cells
+        var path: [Int] = []
+        var visited: [UInt64: Int] = [:]
+        var cancelled = false
+        func heuristic() -> Int {
+            var total = 0
+            for index in 0..<16 {
+                let target = targets[Int(cells[index])]
+                if target >= 0 { total += abs(index / 4 - target / 4) + abs(index % 4 - target % 4) }
+            }
+            return total
+        }
+        func search(_ blank: Int, _ previous: Int, _ depth: Int, _ bound: Int) -> Int {
+            if shouldCancel() { cancelled = true; return Int.max }
+            let h = heuristic()
+            if depth + h > bound { return depth + h }
+            if h == 0 { return -1 }
+            var key: UInt64 = 0
+            for index in 0..<16 { key |= UInt64(cells[index]) << (index * 4) }
+            if let seen = visited[key], seen <= depth { return Int.max }
+            visited[key] = depth
+            var nextBound = Int.max
+            let neighbors = [blank - 4, blank + 4, blank - 1, blank + 1].filter {
+                $0 >= 0 && $0 < 16 && $0 != previous && abs($0 / 4 - blank / 4) + abs($0 % 4 - blank % 4) == 1
+            }.sorted { a, b in
+                func change(_ index: Int) -> Int {
+                    let target = targets[Int(cells[index])]
+                    if target < 0 { return 0 }
+                    return abs(blank / 4 - target / 4) + abs(blank % 4 - target % 4)
+                        - abs(index / 4 - target / 4) - abs(index % 4 - target % 4)
+                }
+                return change(a) < change(b)
+            }
+            for index in neighbors {
+                cells.swapAt(blank, index)
+                path.append(index)
+                let result = search(index, blank, depth + 1, bound)
+                if result == -1 { return -1 }
+                path.removeLast()
+                cells.swapAt(blank, index)
+                if cancelled { return Int.max }
+                nextBound = min(nextBound, result)
+            }
+            return nextBound
+        }
+        var bound = heuristic()
+        while true {
+            visited.removeAll(keepingCapacity: true)
+            let result = search(board.emptyIndex, -1, 0, bound)
+            if cancelled || result == Int.max { return nil }
+            if result == -1 { return path }
+            bound = result
+        }
+    }
+}

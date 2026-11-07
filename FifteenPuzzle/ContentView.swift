@@ -97,12 +97,16 @@ struct ReviewLine: View {
     var body: some View {
         Text(reviewLine)
             .font(.system(size: 12 * s, weight: .regular).monospacedDigit())
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: 440 * s)
             .foregroundColor(.white)
             .frame(height: 16 * s)
             .padding(.top, 4 * s)
     }
 
     private var reviewLine: String {
+        if !controller.planStatus.isEmpty { return controller.planStatus }
         if controller.awaitingSolution { return "solving\u{2026}" }
         guard let n = controller.solutionLength,
               controller.phase == .solved || controller.phase == .reviewing else { return " " }
@@ -119,7 +123,7 @@ struct GrayButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 15 * s, weight: .regular))
             .foregroundColor(.white)
-            .frame(width: 100 * s, height: 30 * s)
+            .frame(width: 96 * s, height: 30 * s)
             .background(Color(Palette.button))
             .clipShape(RoundedRectangle(cornerRadius: 6 * s))
     }
@@ -130,12 +134,20 @@ struct ButtonsRow: View {
     let s: CGFloat
 
     var body: some View {
-        HStack(spacing: 12 * s) {
+        HStack(spacing: 8 * s) {
             Button(controller.ghostEnabled ? "Ghost: on" : "Ghost: off") {
                 controller.ghostEnabled.toggle()
             }
             .accessibilityLabel("Ghost")
             .accessibilityValue(controller.ghostEnabled ? "On" : "Off")
+            Button("Solve") {
+                if controller.planning { controller.solvePlan() }
+                else { controller.beginPlan() }
+            }
+            .disabled(controller.planBusy || controller.phase == .reviewing)
+            if controller.planning || controller.planBusy || !controller.planStatus.isEmpty {
+                Button("Cancel") { controller.cancelPlan() }
+            }
             if controller.phase == .solved || controller.phase == .reviewing {
                 Button("Review") { controller.beginReview() }
                     .disabled(controller.phase == .reviewing || controller.awaitingSolution)
