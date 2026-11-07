@@ -24,6 +24,9 @@ final class GameController: ObservableObject {
     /// Called after the displayed board is replaced wholesale (restart, navigation, review).
     var onBoardReplaced: (() -> Void)?
 
+    var cursorCellIndex: (() -> Int?)?
+    var onBackwardNavigation: (() -> Void)?
+
     let tabs = TabState()
     let history = HistoryStore()
 
@@ -62,7 +65,7 @@ final class GameController: ObservableObject {
         guard tree.play(cellIndex: index) else { return false }
         let now = CACurrentMediaTime()
         if phase == .idle { startTime = now; phase = .running }
-        moves += 1
+        moves = tree.current.depth
         if tree.current.board.isSolved {
             finalTime = now - startTime
             phase = .solved
@@ -78,7 +81,7 @@ final class GameController: ObservableObject {
         return true
     }
 
-    /// Arrow-key navigation. Never touches counters, timer or best.
+    /// Arrow-key navigation updates the move count to the current history depth.
     @discardableResult
     func navigate(_ n: Navigation) -> Bool {
         var changed = false
@@ -101,12 +104,16 @@ final class GameController: ObservableObject {
             case .start, .end: break
             }
         }
-        if changed { onBoardReplaced?() }
+        if changed {
+            if phase != .reviewing { moves = tree.current.depth }
+            onBoardReplaced?()
+            if n == .back { onBackwardNavigation?() }
+        }
         return changed
     }
 
     func restart() {
-        tree = MoveTree(root: PuzzleBoard.shuffled())
+        tree = MoveTree(root: PuzzleBoard.shuffled(emptyIndex: cursorCellIndex?()))
         moves = 0
         finalTime = 0
         reviewPos = 0

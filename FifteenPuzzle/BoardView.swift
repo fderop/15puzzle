@@ -28,10 +28,13 @@ final class BoardView: NSView {
     var controller: GameController! {
         didSet {
             needsDisplay = true
+            controller?.cursorCellIndex = { [weak self] in self?.cursorCell?.index }
+            controller?.onBackwardNavigation = { [weak self] in self?.cursorActive = false }
             controller?.onBoardReplaced = { [weak self] in self?.boardDidReset() }
         }
     }
 
+    private var cursorActive = true
     private var lastCell: Cell?
     private var lastPoint: CGPoint?
     private var tracking: NSTrackingArea?
@@ -112,6 +115,10 @@ final class BoardView: NSView {
     private func apply(_ path: [Cell]) {
         for c in path where c != lastCell {
             lastCell = c
+            if !cursorActive {
+                if c.index == controller.board.emptyIndex { cursorActive = true }
+                continue
+            }
             let oldEmpty = controller.board.emptyIndex
             if controller.tryMove(at: c.index) {
                 invalidate(Cell(index: oldEmpty))
@@ -126,6 +133,12 @@ final class BoardView: NSView {
         setNeedsDisplay(NSRect(x: CGFloat(c.col) * cs, y: CGFloat(c.row) * cs, width: cs, height: cs).insetBy(dx: -1, dy: -1))
     }
 
+    private var cursorCell: Cell? {
+        guard let window, !isHiddenOrHasHiddenAncestor else { return nil }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        return GridTraversal.cell(at: point, cellSize: cellSize)
+    }
+
     /// Call after a reshuffle: nothing moves until the cursor enters a different cell.
     func syncLastCellToCursor() {
         guard let w = window else { lastCell = nil; lastPoint = nil; return }
@@ -136,6 +149,7 @@ final class BoardView: NSView {
 
     func boardDidReset() {
         needsDisplay = true
+        cursorActive = true
         syncLastCellToCursor()
     }
 
