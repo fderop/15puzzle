@@ -6,14 +6,17 @@ private extension Color {
 
 struct ContentView: View {
     let controller: GameController   // not observed: moves never re-evaluate this view
+    let training: GameController
+    let tabs: TabState
 
     var body: some View {
-        TabbedContent(controller: controller, tabs: controller.tabs)
+        TabbedContent(controller: controller, training: training, tabs: tabs)
     }
 }
 
 private struct TabbedContent: View {
     let controller: GameController
+    let training: GameController
     @ObservedObject var tabs: TabState
 
     var body: some View {
@@ -21,21 +24,25 @@ private struct TabbedContent: View {
             let s = max(0.5, min(geo.size.width / 480, geo.size.height / 630))
             ZStack {
                 Color(Palette.background)
-                PlayView(controller: controller, s: s)
-                    .opacity(tabs.tab == .play ? 1 : 0)
-                    .allowsHitTesting(tabs.tab == .play)
+                if tabs.tab == .train {
+                    PlayView(controller: training, s: s)
+                        .id(AppTab.train)
+                } else if tabs.tab == .play {
+                    PlayView(controller: controller, s: s)
+                }
                 if tabs.tab == .history {
                     HistoryView(history: controller.history, best: controller.best, s: s)
                         .padding(.top, 36 * s)
                 }
                 Picker("", selection: $tabs.tab) {
                     Text("Play").tag(AppTab.play)
+                    Text("Train").tag(AppTab.train)
                     Text("History").tag(AppTab.history)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .focusable(false)
-                .frame(width: 150 * s)
+                .frame(width: 225 * s)
                 .padding(.top, 6 * s)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
@@ -58,7 +65,9 @@ private struct PlayView: View {
                 .frame(width: 440 * s, height: 440 * s)
             Spacer().frame(height: 14 * s)
             ButtonsRow(controller: controller, s: s)
-            OptimalCounts(controller: controller, s: s)
+            if controller.mode == .train {
+                OptimalCounts(controller: controller, s: s)
+            }
             ReviewLine(controller: controller, s: s)
         }
         .padding(.top, 36 * s)
@@ -79,9 +88,11 @@ struct StatsView: View {
                     + Text("s").foregroundColor(.white))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text("\(controller.moves)").foregroundColor(.white)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                Text(tps).foregroundColor(.white)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(maxWidth: .infinity, alignment: controller.mode == .train ? .center : .trailing)
+                if controller.mode == .train {
+                    Text(tps).foregroundColor(.white)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
             .font(.system(size: 20 * s, weight: .regular).monospacedDigit())
             .lineLimit(1)
@@ -113,6 +124,7 @@ struct ReviewLine: View {
         if controller.phase == .reviewing {
             return "optimal: \(n) moves   \(controller.reviewPos) / \(n)   you: \(controller.moves)"
         }
+        if controller.mode == .play { return " " }
         return "optimal: \(n) moves   you: \(controller.moves)"
     }
 }
@@ -135,18 +147,18 @@ struct ButtonsRow: View {
 
     var body: some View {
         HStack(spacing: 8 * s) {
-            Button(controller.ghostEnabled ? "Ghost: on" : "Ghost: off") {
-                controller.ghostEnabled.toggle()
-            }
-            .accessibilityLabel("Ghost")
-            .accessibilityValue(controller.ghostEnabled ? "On" : "Off")
-            Button("Solve") {
-                if controller.planning { controller.solvePlan() }
-                else { controller.beginPlan() }
-            }
-            .disabled(controller.planBusy || controller.phase == .reviewing)
-            if controller.planning || controller.planBusy || !controller.planStatus.isEmpty {
-                Button("Cancel") { controller.cancelPlan() }
+            if controller.mode == .train {
+                Button(controller.ghostEnabled ? "Ghost: on" : "Ghost: off") {
+                    controller.toggleGhost()
+                }
+                .accessibilityLabel("Ghost")
+                .accessibilityValue(controller.ghostEnabled ? "On" : "Off")
+                .help("Toggle Ghost (G)")
+                Button(controller.planning || controller.planBusy || !controller.planStatus.isEmpty ? "Solve: on" : "Solve: off") {
+                    controller.toggleSolve()
+                }
+                .disabled(controller.phase == .reviewing)
+                .help("Toggle Solve (S). Set targets, then press S to find a path.")
             }
             if controller.phase == .solved || controller.phase == .reviewing {
                 Button("Review") { controller.beginReview() }

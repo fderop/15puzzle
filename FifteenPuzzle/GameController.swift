@@ -12,10 +12,17 @@ struct OptimalMoveCounts {
 
 struct PersonalBest: Equatable { var time: Double; var moves: Int }
 
-enum AppTab { case play, history }
+enum AppTab { case play, train, history }
+enum GameMode { case play, train }
 
 final class TabState: ObservableObject {
-    @Published var tab: AppTab = ProcessInfo.processInfo.environment["FIFTEEN_START_TAB"] == "history" ? .history : .play
+    @Published var tab: AppTab = {
+        switch ProcessInfo.processInfo.environment["FIFTEEN_START_TAB"] {
+        case "train": return .train
+        case "history": return .history
+        default: return .play
+        }
+    }()
 }
 
 /// Game state shared by the board view (direct calls) and SwiftUI chrome (observes published values only).
@@ -36,6 +43,7 @@ final class GameController: ObservableObject {
         }
     }
     private var usedAssistance = false
+    private var requestedOptimalMove = false
     private(set) var ghostPath: [Int] = []
     var onHintsChanged: (() -> Void)?
     private var currentSolveTask: Task<Void, Never>?
@@ -49,7 +57,31 @@ final class GameController: ObservableObject {
     private var planTask: Task<Void, Never>?
     private var planGeneration = UUID()
 
+    func toggleGhost() {
+        guard mode == .train else { return }
+        if !ghostEnabled { cancelPlan() }
+        ghostEnabled.toggle()
+    }
+
+    func toggleSolve() {
+        guard mode == .train else { return }
+        if planning { solvePlan() }
+        else if planBusy || !planStatus.isEmpty { cancelPlan() }
+        else { beginPlan() }
+    }
+
+    func playOptimalMove() {
+        guard mode == .train, !planning, !planBusy, phase != .reviewing, phase != .solved else { return }
+        if let index = planPath?.first ?? optimalPaths[board.cells]?.first {
+            requestedOptimalMove = false
+            _ = tryMove(at: index)
+        } else {
+            requestedOptimalMove = true
+        }
+    }
+
     func beginPlan() {
+        requestedOptimalMove = false
         usedAssistance = true
         ghostEnabled = false
         cancelPlan()
@@ -104,8 +136,8 @@ final class GameController: ObservableObject {
     var cursorCellIndex: (() -> Int?)?
     var onBackwardNavigation: (() -> Void)?
 
-    let tabs = TabState()
-    let history = HistoryStore()
+    let mode: GameMode
+    let history: HistoryStore
 
     private(set) var tree: MoveTree
     private var reviewBoards: [PuzzleBoard] = []
@@ -118,7 +150,9 @@ final class GameController: ObservableObject {
 
     var board: PuzzleBoard { phase == .reviewing ? reviewBoards[reviewPos] : tree.current.board }
 
-    init() {
+    init(mode: GameMode = .play, history: HistoryStore = HistoryStore()) {
+        self.mode = mode
+        self.history = history
         tree = MoveTree(root: PuzzleBoard.shuffled())
         let d = UserDefaults.standard
         if d.object(forKey: Self.timeKey) != nil {
@@ -126,7 +160,7 @@ final class GameController: ObservableObject {
         }
         startSolve()
         updateHints()
-        history.fillMissing()
+        if mode == .play { history.fillMissing() }
     }
 
     func elapsed() -> Double {
@@ -152,7 +186,7 @@ final class GameController: ObservableObject {
         if tree.current.board.isSolved {
             finalTime = now - startTime
             phase = .solved
-            if !usedAssistance {
+            if mode == .play && !usedAssistance {
                 history.append(SolveRecord(date: Date(), seconds: finalTime, moves: moves,
                                           scramble: tree.root.board.cells, optimalMoves: solutionLength))
                 if best == nil || finalTime < best!.time {
@@ -176,6 +210,8 @@ final class GameController: ObservableObject {
     /// Arrow-key navigation updates the move count to the current history depth.
     @discardableResult
     func navigate(_ n: Navigation) -> Bool {
+        guard mode == .train || phase == .reviewing else { return false }
+        requestedOptimalMove = false
         if planning || planBusy { return false }
         if planPath != nil || !planStatus.isEmpty { cancelPlan() }
         var changed = false
@@ -208,6 +244,7 @@ final class GameController: ObservableObject {
     }
 
     func restart() {
+        requestedOptimalMove = false
         cancelPlan()
         usedAssistance = ghostEnabled
         tree = MoveTree(root: PuzzleBoard.shuffled(emptyIndex: cursorCellIndex?()))
@@ -249,7 +286,7 @@ final class GameController: ObservableObject {
         solutionLength = s.count
         cachePath(s, from: scramble)
         updateHints()
-        history.setOptimal(scramble: scramble.cells, moves: s.count)
+        if mode == .play { history.setOptimal(scramble: scramble.cells, moves: s.count) }
         if awaitingSolution { awaitingSolution = false; enterReview() }
     }
 
@@ -275,8 +312,8 @@ final class GameController: ObservableObject {
         remainingOptimalMoves = nil
         ghostPath = []
         onHintsChanged?()
-        // The root solver already owns this position.
-        if position == tree.root.board { return }
+        // Play only needs the original solution for the post-game review.
+        if mode == .play || position == tree.root.board { return }
         // Walk back to a cached ancestor to obtain a legal upper bound.
         // After one move from a known optimum, only the shorter alternative needs a search.
         var node = tree.current
@@ -311,6 +348,7 @@ final class GameController: ObservableObject {
         }
         ghostPath = path.isEmpty ? [] : [board.emptyIndex] + Array(path.prefix(5))
         onHintsChanged?()
+        if requestedOptimalMove { playOptimalMove() }
     }
 
     func beginReview() {
