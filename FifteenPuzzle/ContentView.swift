@@ -171,9 +171,9 @@ struct OptimalCounts: View {
                 .accessibilityLabel("Original optimal moves")
                 .accessibilityValue(controller.displayedOptimalCounts.map { String($0.original) } ?? "")
             HStack(spacing: 8 * s) {
-                Text(controller.displayedOptimalCounts.map { String($0.remaining) } ?? "")
+                Text(controller.displayedOptimalCounts.map { String($0.total) } ?? "")
                     .frame(width: 32 * s, alignment: .trailing)
-                    .accessibilityLabel("Remaining optimal moves")
+                    .accessibilityLabel("Total moves with perfect play from here")
                 Text(deficitText)
                     .frame(width: 100 * s, alignment: .leading)
                     .accessibilityLabel("Deficit")

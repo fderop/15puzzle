@@ -6,7 +6,7 @@ enum Navigation { case back, forward, prevSibling, nextSibling, start, end }
 
 struct OptimalMoveCounts {
     let original: Int
-    let remaining: Int
+    let total: Int
     let deficit: Int
 }
 
@@ -306,7 +306,7 @@ final class GameController: ObservableObject {
         remainingOptimalMoves = path.count
         if let original = solutionLength {
             let count = phase == .reviewing ? reviewPos : moves
-            displayedOptimalCounts = OptimalMoveCounts(original: original, remaining: path.count,
+            displayedOptimalCounts = OptimalMoveCounts(original: original, total: count + path.count,
                                                        deficit: count + path.count - original)
         }
         ghostPath = path.isEmpty ? [] : [board.emptyIndex] + Array(path.prefix(5))
