@@ -2,6 +2,7 @@ import Foundation
 
 final class MoveNode {
     let board: PuzzleBoard
+    let depth: Int
     /// Tile number moved to reach this node (0 for the root).
     let tile: UInt8
     unowned(unsafe) let parent: MoveNode?
@@ -10,6 +11,7 @@ final class MoveNode {
     fileprivate(set) var preferred = 0
 
     init(board: PuzzleBoard, tile: UInt8, parent: MoveNode?) {
+        self.depth = (parent?.depth ?? -1) + 1
         self.board = board; self.tile = tile; self.parent = parent
     }
     fileprivate func add(_ n: MoveNode) { children.append(n); preferred = children.count - 1 }

@@ -4,12 +4,25 @@ import QuartzCore
 enum GamePhase { case idle, running, solved, reviewing }
 enum Navigation { case back, forward, prevSibling, nextSibling, start, end }
 
+struct OptimalMoveCounts {
+    let original: Int
+    let total: Int
+    let deficit: Int
+}
+
 struct PersonalBest: Equatable { var time: Double; var moves: Int }
 
-enum AppTab { case play, history }
+enum AppTab { case play, train, history }
+enum GameMode { case play, train }
 
 final class TabState: ObservableObject {
-    @Published var tab: AppTab = ProcessInfo.processInfo.environment["FIFTEEN_START_TAB"] == "history" ? .history : .play
+    @Published var tab: AppTab = {
+        switch ProcessInfo.processInfo.environment["FIFTEEN_START_TAB"] {
+        case "train": return .train
+        case "history": return .history
+        default: return .play
+        }
+    }()
 }
 
 /// Game state shared by the board view (direct calls) and SwiftUI chrome (observes published values only).
@@ -21,11 +34,110 @@ final class GameController: ObservableObject {
     @Published private(set) var awaitingSolution = false
     @Published private(set) var reviewPos = 0
 
+    @Published private(set) var displayedOptimalCounts: OptimalMoveCounts?
+    @Published private(set) var remainingOptimalMoves: Int?
+    @Published var ghostEnabled = false {
+        didSet {
+            if ghostEnabled { usedAssistance = true }
+            onHintsChanged?()
+        }
+    }
+    private var usedAssistance = false
+    private var requestedOptimalMove = false
+    private(set) var ghostPath: [Int] = []
+    var onHintsChanged: (() -> Void)?
+    private var currentSolveTask: Task<Void, Never>?
+    private var optimalPaths: [[UInt8]: [Int]] = [:]
+
+    @Published private(set) var planning = false
+    @Published private(set) var planStatus = ""
+    @Published private(set) var planBusy = false
+    private(set) var planTargets: [UInt8: Int] = [:]
+    private(set) var planPath: [Int]?
+    private var planTask: Task<Void, Never>?
+    private var planGeneration = UUID()
+
+    func toggleGhost() {
+        guard mode == .train else { return }
+        if !ghostEnabled { cancelPlan() }
+        ghostEnabled.toggle()
+    }
+
+    func toggleSolve() {
+        guard mode == .train else { return }
+        if planning { solvePlan() }
+        else if planBusy || !planStatus.isEmpty { cancelPlan() }
+        else { beginPlan() }
+    }
+
+    func playOptimalMove() {
+        guard mode == .train, !planning, !planBusy, phase != .reviewing, phase != .solved else { return }
+        if let index = planPath?.first ?? optimalPaths[board.cells]?.first {
+            requestedOptimalMove = false
+            _ = tryMove(at: index)
+        } else {
+            requestedOptimalMove = true
+        }
+    }
+
+    func beginPlan() {
+        requestedOptimalMove = false
+        usedAssistance = true
+        ghostEnabled = false
+        cancelPlan()
+        planning = true
+        planStatus = "Drag tiles to their target positions."
+        onBoardReplaced?()
+    }
+
+    func placeTarget(tile: UInt8, at index: Int) {
+        if board.cells[index] == tile { planTargets.removeValue(forKey: tile) }
+        else { planTargets[tile] = index }
+        onHintsChanged?()
+    }
+
+    func cancelPlan() {
+        planTask?.cancel()
+        planGeneration = UUID()
+        planning = false
+        planBusy = false
+        planTargets = [:]
+        planPath = nil
+        planStatus = ""
+        onBoardReplaced?()
+    }
+
+    func solvePlan() {
+        planning = false
+        planBusy = true
+        planPath = nil
+        planStatus = "Finding a shortest path…"
+        onBoardReplaced?()
+        let position = board, goals = planTargets, generation = UUID()
+        planGeneration = generation
+        planTask?.cancel()
+        planTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let path = ArrangementSolver.solve(position, goals: goals, shouldCancel: { Task.isCancelled })
+            guard !Task.isCancelled else { return }
+            DispatchQueue.main.async {
+                guard let self, self.planGeneration == generation else { return }
+                self.planBusy = false
+                self.planPath = path
+                self.planStatus = path.map { $0.isEmpty ? "Targets reached." : "Target path: \($0.count) moves" }
+                    ?? "Impossible: these targets cannot share a legal board."
+                self.onHintsChanged?()
+            }
+        }
+    }
+
     /// Called after the displayed board is replaced wholesale (restart, navigation, review).
     var onBoardReplaced: (() -> Void)?
 
-    let tabs = TabState()
-    let history = HistoryStore()
+    var cursorCellIndex: (() -> Int?)?
+    var onBackwardNavigation: (() -> Void)?
+
+    let mode: GameMode
+    let history: HistoryStore
 
     private(set) var tree: MoveTree
     private var reviewBoards: [PuzzleBoard] = []
@@ -38,14 +150,17 @@ final class GameController: ObservableObject {
 
     var board: PuzzleBoard { phase == .reviewing ? reviewBoards[reviewPos] : tree.current.board }
 
-    init() {
+    init(mode: GameMode = .play, history: HistoryStore = HistoryStore()) {
+        self.mode = mode
+        self.history = history
         tree = MoveTree(root: PuzzleBoard.shuffled())
         let d = UserDefaults.standard
         if d.object(forKey: Self.timeKey) != nil {
             best = PersonalBest(time: d.double(forKey: Self.timeKey), moves: d.integer(forKey: Self.movesKey))
         }
         startSolve()
-        history.fillMissing()
+        updateHints()
+        if mode == .play { history.fillMissing() }
     }
 
     func elapsed() -> Double {
@@ -58,29 +173,47 @@ final class GameController: ObservableObject {
 
     /// Mouse path. Tries to slide the tile at `index`.
     func tryMove(at index: Int) -> Bool {
-        if phase == .solved || phase == .reviewing { return false }
+        if planning || planBusy || phase == .reviewing { return false }
+        if phase == .solved {
+            if planPath?.isEmpty != false { return false }
+            startTime = CACurrentMediaTime() - finalTime
+            phase = .running
+        }
         guard tree.play(cellIndex: index) else { return false }
         let now = CACurrentMediaTime()
         if phase == .idle { startTime = now; phase = .running }
-        moves += 1
+        moves = tree.current.depth
         if tree.current.board.isSolved {
             finalTime = now - startTime
             phase = .solved
-            history.append(SolveRecord(date: Date(), seconds: finalTime, moves: moves,
-                                            scramble: tree.root.board.cells, optimalMoves: solutionLength))
-            if best == nil || finalTime < best!.time {
-                let pb = PersonalBest(time: finalTime, moves: moves)
-                best = pb
-                UserDefaults.standard.set(pb.time, forKey: Self.timeKey)
-                UserDefaults.standard.set(pb.moves, forKey: Self.movesKey)
+            if mode == .play && !usedAssistance {
+                history.append(SolveRecord(date: Date(), seconds: finalTime, moves: moves,
+                                          scramble: tree.root.board.cells, optimalMoves: solutionLength))
+                if best == nil || finalTime < best!.time {
+                    let pb = PersonalBest(time: finalTime, moves: moves)
+                    best = pb
+                    UserDefaults.standard.set(pb.time, forKey: Self.timeKey)
+                    UserDefaults.standard.set(pb.moves, forKey: Self.movesKey)
+                }
             }
         }
+        if let path = planPath, !path.isEmpty {
+            if path.first == index {
+                planPath = Array(path.dropFirst())
+                planStatus = planPath!.isEmpty ? "Targets reached." : "Target path: \(planPath!.count) moves"
+            } else { solvePlan() }
+        }
+        updateHints()
         return true
     }
 
-    /// Arrow-key navigation. Never touches counters, timer or best.
+    /// Arrow-key navigation updates the move count to the current history depth.
     @discardableResult
     func navigate(_ n: Navigation) -> Bool {
+        guard mode == .train || phase == .reviewing else { return false }
+        requestedOptimalMove = false
+        if planning || planBusy { return false }
+        if planPath != nil || !planStatus.isEmpty { cancelPlan() }
         var changed = false
         if phase == .reviewing {
             let last = reviewBoards.count - 1
@@ -101,19 +234,29 @@ final class GameController: ObservableObject {
             case .start, .end: break
             }
         }
-        if changed { onBoardReplaced?() }
+        if changed {
+            if phase != .reviewing { moves = tree.current.depth }
+            updateHints()
+            onBoardReplaced?()
+            if n == .back { onBackwardNavigation?() }
+        }
         return changed
     }
 
     func restart() {
-        tree = MoveTree(root: PuzzleBoard.shuffled())
+        requestedOptimalMove = false
+        cancelPlan()
+        usedAssistance = ghostEnabled
+        tree = MoveTree(root: PuzzleBoard.shuffled(emptyIndex: cursorCellIndex?()))
         moves = 0
         finalTime = 0
         reviewPos = 0
         reviewBoards = []
         awaitingSolution = false
         phase = .idle
+        optimalPaths = [:]
         startSolve()
+        updateHints()
         onBoardReplaced?()
     }
 
@@ -141,11 +284,75 @@ final class GameController: ObservableObject {
         guard scramble == tree.root.board else { return }   // stale
         solution = s
         solutionLength = s.count
-        history.setOptimal(scramble: scramble.cells, moves: s.count)
+        cachePath(s, from: scramble)
+        updateHints()
+        if mode == .play { history.setOptimal(scramble: scramble.cells, moves: s.count) }
         if awaitingSolution { awaitingSolution = false; enterReview() }
     }
 
+    private func cachePath(_ path: [Int], from start: PuzzleBoard) {
+        var b = start
+        for step in 0...path.count {
+            optimalPaths[b.cells] = Array(path.dropFirst(step))
+            if step < path.count { b.move(at: path[step]) }
+        }
+    }
+
+    private func updateHints() {
+        currentSolveTask?.cancel()
+        let position = board
+        if let path = optimalPaths[position.cells] {
+            showHints(path)
+            return
+        }
+        if position.isSolved {
+            showHints([])
+            return
+        }
+        remainingOptimalMoves = nil
+        ghostPath = []
+        onHintsChanged?()
+        // Play only needs the original solution for the post-game review.
+        if mode == .play || position == tree.root.board { return }
+        // Walk back to a cached ancestor to obtain a legal upper bound.
+        // After one move from a known optimum, only the shorter alternative needs a search.
+        var node = tree.current
+        var route: [Int] = []
+        var upperBound: [Int]?
+        while let parent = node.parent {
+            route.append(parent.board.emptyIndex)
+            if let cached = optimalPaths[parent.board.cells] {
+                upperBound = route + cached
+                break
+            }
+            node = parent
+        }
+        let knownRoute = upperBound
+        currentSolveTask = Task.detached(priority: .utility) { [weak self] in
+            let path = PuzzleSolver.solve(position, upperBound: knownRoute, shouldCancel: { Task.isCancelled })
+            guard let path, !Task.isCancelled else { return }
+            DispatchQueue.main.async {
+                guard let self, self.board == position else { return }
+                self.cachePath(path, from: position)
+                self.showHints(path)
+            }
+        }
+    }
+
+    private func showHints(_ path: [Int]) {
+        remainingOptimalMoves = path.count
+        if let original = solutionLength {
+            let count = phase == .reviewing ? reviewPos : moves
+            displayedOptimalCounts = OptimalMoveCounts(original: original, total: count + path.count,
+                                                       deficit: count + path.count - original)
+        }
+        ghostPath = path.isEmpty ? [] : [board.emptyIndex] + Array(path.prefix(5))
+        onHintsChanged?()
+        if requestedOptimalMove { playOptimalMove() }
+    }
+
     func beginReview() {
+        cancelPlan()
         guard phase == .solved else { return }
         if solution != nil { enterReview() } else { awaitingSolution = true }
     }
@@ -158,6 +365,7 @@ final class GameController: ObservableObject {
         reviewBoards = boards
         reviewPos = 0
         phase = .reviewing
+        updateHints()
         onBoardReplaced?()
     }
 }

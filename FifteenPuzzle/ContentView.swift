@@ -6,14 +6,17 @@ private extension Color {
 
 struct ContentView: View {
     let controller: GameController   // not observed: moves never re-evaluate this view
+    let training: GameController
+    let tabs: TabState
 
     var body: some View {
-        TabbedContent(controller: controller, tabs: controller.tabs)
+        TabbedContent(controller: controller, training: training, tabs: tabs)
     }
 }
 
 private struct TabbedContent: View {
     let controller: GameController
+    let training: GameController
     @ObservedObject var tabs: TabState
 
     var body: some View {
@@ -21,21 +24,25 @@ private struct TabbedContent: View {
             let s = max(0.5, min(geo.size.width / 480, geo.size.height / 630))
             ZStack {
                 Color(Palette.background)
-                PlayView(controller: controller, s: s)
-                    .opacity(tabs.tab == .play ? 1 : 0)
-                    .allowsHitTesting(tabs.tab == .play)
+                if tabs.tab == .train {
+                    PlayView(controller: training, s: s)
+                        .id(AppTab.train)
+                } else if tabs.tab == .play {
+                    PlayView(controller: controller, s: s)
+                }
                 if tabs.tab == .history {
                     HistoryView(history: controller.history, best: controller.best, s: s)
                         .padding(.top, 36 * s)
                 }
                 Picker("", selection: $tabs.tab) {
                     Text("Play").tag(AppTab.play)
+                    Text("Train").tag(AppTab.train)
                     Text("History").tag(AppTab.history)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .focusable(false)
-                .frame(width: 150 * s)
+                .frame(width: 225 * s)
                 .padding(.top, 6 * s)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
@@ -58,6 +65,9 @@ private struct PlayView: View {
                 .frame(width: 440 * s, height: 440 * s)
             Spacer().frame(height: 14 * s)
             ButtonsRow(controller: controller, s: s)
+            if controller.mode == .train {
+                OptimalCounts(controller: controller, s: s)
+            }
             ReviewLine(controller: controller, s: s)
         }
         .padding(.top, 36 * s)
@@ -78,9 +88,11 @@ struct StatsView: View {
                     + Text("s").foregroundColor(.white))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text("\(controller.moves)").foregroundColor(.white)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                Text(tps).foregroundColor(.white)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(maxWidth: .infinity, alignment: controller.mode == .train ? .center : .trailing)
+                if controller.mode == .train {
+                    Text(tps).foregroundColor(.white)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
             .font(.system(size: 20 * s, weight: .regular).monospacedDigit())
             .lineLimit(1)
@@ -96,18 +108,23 @@ struct ReviewLine: View {
     var body: some View {
         Text(reviewLine)
             .font(.system(size: 12 * s, weight: .regular).monospacedDigit())
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: 440 * s)
             .foregroundColor(.white)
             .frame(height: 16 * s)
             .padding(.top, 4 * s)
     }
 
     private var reviewLine: String {
+        if !controller.planStatus.isEmpty { return controller.planStatus }
         if controller.awaitingSolution { return "solving\u{2026}" }
         guard let n = controller.solutionLength,
               controller.phase == .solved || controller.phase == .reviewing else { return " " }
         if controller.phase == .reviewing {
             return "optimal: \(n) moves   \(controller.reviewPos) / \(n)   you: \(controller.moves)"
         }
+        if controller.mode == .play { return " " }
         return "optimal: \(n) moves   you: \(controller.moves)"
     }
 }
@@ -118,7 +135,7 @@ struct GrayButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 15 * s, weight: .regular))
             .foregroundColor(.white)
-            .frame(width: 100 * s, height: 30 * s)
+            .frame(width: 96 * s, height: 30 * s)
             .background(Color(Palette.button))
             .clipShape(RoundedRectangle(cornerRadius: 6 * s))
     }
@@ -129,7 +146,20 @@ struct ButtonsRow: View {
     let s: CGFloat
 
     var body: some View {
-        HStack(spacing: 12 * s) {
+        HStack(spacing: 8 * s) {
+            if controller.mode == .train {
+                Button(controller.ghostEnabled ? "Ghost: on" : "Ghost: off") {
+                    controller.toggleGhost()
+                }
+                .accessibilityLabel("Ghost")
+                .accessibilityValue(controller.ghostEnabled ? "On" : "Off")
+                .help("Toggle Ghost (G)")
+                Button(controller.planning || controller.planBusy || !controller.planStatus.isEmpty ? "Solve: on" : "Solve: off") {
+                    controller.toggleSolve()
+                }
+                .disabled(controller.phase == .reviewing)
+                .help("Toggle Solve (S). Set targets, then press S to find a path.")
+            }
             if controller.phase == .solved || controller.phase == .reviewing {
                 Button("Review") { controller.beginReview() }
                     .disabled(controller.phase == .reviewing || controller.awaitingSolution)
@@ -141,3 +171,35 @@ struct ButtonsRow: View {
     }
 }
 
+
+struct OptimalCounts: View {
+    @ObservedObject var controller: GameController
+    let s: CGFloat
+
+    var body: some View {
+        HStack(spacing: 24 * s) {
+            Text(controller.displayedOptimalCounts.map { String($0.original) } ?? "")
+                .frame(width: 32 * s, alignment: .trailing)
+                .accessibilityLabel("Original optimal moves")
+                .accessibilityValue(controller.displayedOptimalCounts.map { String($0.original) } ?? "")
+            HStack(spacing: 8 * s) {
+                Text(controller.displayedOptimalCounts.map { String($0.total) } ?? "")
+                    .frame(width: 32 * s, alignment: .trailing)
+                    .accessibilityLabel("Total moves with perfect play from here")
+                Text(deficitText)
+                    .frame(width: 100 * s, alignment: .leading)
+                    .accessibilityLabel("Deficit")
+            }
+        }
+        .font(.system(size: 13 * s).monospacedDigit())
+        .foregroundColor(.white)
+        .padding(.top, 6 * s)
+    }
+
+    private var deficitText: String {
+        guard let counts = controller.displayedOptimalCounts else { return "" }
+        let deficit = counts.deficit
+        return "(\(deficit >= 0 ? "+" : "")\(deficit))"
+    }
+
+}

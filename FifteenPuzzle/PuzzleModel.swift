@@ -60,13 +60,14 @@ struct PuzzleBoard: Equatable {
     }
 
     /// Fisher-Yates over all 16 cells, parity-fix by swapping two tiles, reshuffle if solved.
-    static func shuffled<R: RandomNumberGenerator>(using rng: inout R) -> PuzzleBoard {
+    static func shuffled<R: RandomNumberGenerator>(emptyIndex: Int? = nil, using rng: inout R) -> PuzzleBoard {
         while true {
             var c = solvedCells
             for i in stride(from: count - 1, to: 0, by: -1) {
                 let j = Int.random(in: 0...i, using: &rng)
                 c.swapAt(i, j)
             }
+            if let emptyIndex { c.swapAt(c.firstIndex(of: 0)!, emptyIndex) }
             if !isSolvable(c) {
                 let idx = c.indices.filter { c[$0] != 0 }
                 c.swapAt(idx[0], idx[1])
@@ -76,9 +77,9 @@ struct PuzzleBoard: Equatable {
         }
     }
 
-    static func shuffled() -> PuzzleBoard {
+    static func shuffled(emptyIndex: Int? = nil) -> PuzzleBoard {
         var rng = SystemRandomNumberGenerator()
-        return shuffled(using: &rng)
+        return shuffled(emptyIndex: emptyIndex, using: &rng)
     }
 }
 
