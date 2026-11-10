@@ -1,8 +1,9 @@
-# 15puzzle
+# fifteen
 
 Native macOS 15-puzzle for mouse speed-solving (Swift, AppKit + SwiftUI).
 
 - **Hover to move** — no clicking. Any tile adjacent to the empty cell slides as soon as the cursor enters it; fast sweeps are traced cell by cell so no move is lost.
+- **T** rotates the tile color scheme 90 degrees clockwise. Four presses restore the original colors.
 - **R** reshuffles into a new random solvable state.
 - **Play** shows the timer, move count, and Review after a solve. Only Play games enter history or update the personal best.
 - **Train** has a separate game with Ghost, Solve, optimal counts, deficit, and TPS. Training games do not enter history.
@@ -18,7 +19,7 @@ Stats are stored in `~/Library/Application Support/FifteenPuzzle/history.json`; 
 ## Build
 
 ```sh
-./build.sh --run   # swiftc build → build/FifteenPuzzle.app (no Xcode needed)
+./build.sh --run   # swiftc build → build/fifteen.app (no Xcode needed)
 ./test.sh          # pure-logic tests
 ```
 

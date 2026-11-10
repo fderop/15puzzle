@@ -11,8 +11,15 @@ enum Palette {
     static let button = rgb(0x808080)
     static let gold = rgb(0xFFD700)
 
-    static func tileColor(_ n: Int) -> NSColor {
-        switch n {
+    static var rotation = 0
+
+    static func tileColor(_ number: Int) -> NSColor {
+        var row = (number - 1) / 4
+        var col = (number - 1) % 4
+        for _ in 0..<rotation {
+            (row, col) = (3 - col, row)
+        }
+        switch row * 4 + col + 1 {
         case 1...4: return rgb(0xFF6464)
         case 5, 9, 13: return rgb(0xFFF55A)
         case 6, 7, 8: return rgb(0x75FF60)

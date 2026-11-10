@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 630),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
-        window.title = "Fifteen Puzzle"
+        window.title = "fifteen"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.appearance = NSAppearance(named: .darkAqua)
@@ -42,6 +42,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mods = e.modifierFlags.intersection([.command, .control, .option, .shift])
         // Arrows/Home/End with a modifier held do nothing but are still swallowed (no beep).
         if !mods.isEmpty { return [123, 124, 125, 126, 115, 119].contains(e.keyCode) ? nil : e }
+        if e.keyCode == 17 { // T
+            if !e.isARepeat {
+                Palette.rotation = (Palette.rotation + 1) % 4
+                self.controller.onHintsChanged?()
+                training.onHintsChanged?()
+            }
+            return nil
+        }
         if tabs.tab == .history { return nil }
         let controller = tabs.tab == .train ? training : self.controller
         switch e.keyCode {
@@ -71,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
         let appItem = NSMenuItem(); main.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Fifteen Puzzle", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit fifteen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         NSApp.mainMenu = main
     }
