@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !mods.isEmpty { return [123, 124, 125, 126, 115, 119].contains(e.keyCode) ? nil : e }
         if e.keyCode == 17 { // T
             if !e.isARepeat {
-                Palette.rotation = (Palette.rotation + 1) % 4
+                Palette.transposed.toggle()
                 self.controller.onHintsChanged?()
                 training.onHintsChanged?()
             }
