@@ -3,7 +3,7 @@
 Native macOS 15-puzzle for mouse speed-solving (Swift, AppKit + SwiftUI).
 
 - **Hover to move** — no clicking. Any tile adjacent to the empty cell slides as soon as the cursor enters it; fast sweeps are traced cell by cell so no move is lost.
-- **T** rotates the tile color scheme 90 degrees clockwise. Four presses restore the original colors.
+- **T** toggles the tile colors between the original scheme and its transpose across the main diagonal.
 - **R** reshuffles into a new random solvable state.
 - **Play** shows the timer, move count, and Review after a solve. Only Play games enter history or update the personal best.
 - **Train** has a separate game with Ghost, Solve, optimal counts, deficit, and TPS. Training games do not enter history.
